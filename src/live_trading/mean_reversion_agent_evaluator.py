@@ -117,7 +117,12 @@ def volume_nao_e_anomalia(df, periodo=20, multiplicador_max=2.0, logger=None, sy
         eh_normal = volume_sinal <= limite
         if logger:
             status = "OK" if eh_normal else "ANOMALO"
-            logger.info(LogCategory.TRADE_SEARCH, f"Volume {status}: {volume_sinal:.0f} / limite {limite:.0f}", module, symbol=symbol)
+            logger.info(
+                LogCategory.TRADE_SEARCH,
+                f"Volume {status}: {volume_sinal:.0f} / limite {limite:.0f}",
+                module,
+                symbol=symbol
+            )
         return eh_normal
     except Exception:
         return True
@@ -312,28 +317,43 @@ def start_live_trading_bot(
                                     df_4h = busca_velas(cripto, '240', [9, 21])
                                     df_4h = prepare_market_data(df_4h, use_emas=True, emas_periods=[200], use_peaks=True, peaks_distance=21)
 
-                                    logger.agent(LogCategory.AGENT_EXECUTION,
-                                        "Sinal MR COMPRA confirmado. Iniciando Entry Evaluator.", MODULE_NAME,
-                                        agent_name="Entry Evaluator MR", symbol=cripto,
-                                        rsi=round(rsi_sync.iloc[-1], 2), bb_inf=round(bb_inf_sync.iloc[-1], 5),
-                                        bb_med_alvo=round(bb_med_sync.iloc[-1], 5), adx=round(adx_sync.iloc[-1], 2))
+                                    logger.agent(
+                                        LogCategory.AGENT_EXECUTION,
+                                        "Sinal MR COMPRA confirmado. Iniciando Entry Evaluator.",
+                                        MODULE_NAME,
+                                        agent_name="Entry Evaluator MR",
+                                        symbol=cripto,
+                                        rsi=round(rsi_sync.iloc[-1], 2),
+                                        bb_inf=round(bb_inf_sync.iloc[-1], 5),
+                                        bb_med_alvo=round(bb_med_sync.iloc[-1], 5),
+                                        adx=round(adx_sync.iloc[-1], 2)
+                                    )
 
-                                    resposta = trade_entry_evaluator.run(prompt_trade_entry_evaluator(
-                                        saldo, tempo_grafico,
-                                        rsi_periodo, rsi_sobrevenda, rsi_sobrecompra,
-                                        bb_periodo, bb_desvio_padrao,
-                                        adx_periodo, adx_limite_maximo,
-                                        rsi_sync.iloc[-1], bb_sup_sync.iloc[-1], bb_med_sync.iloc[-1], bb_inf_sync.iloc[-1],
-                                        adx_sync.iloc[-1],
-                                        cripto, qtd_min_para_operar, subconta, 'compra',
-                                        df_consolidado, df_1w, df_1d, df_4h
-                                    ))
+                                    resposta = trade_entry_evaluator.run(
+                                        prompt_trade_entry_evaluator(
+                                            saldo, tempo_grafico,
+                                            rsi_periodo, rsi_sobrevenda, rsi_sobrecompra,
+                                            bb_periodo, bb_desvio_padrao,
+                                            adx_periodo, adx_limite_maximo,
+                                            rsi_sync.iloc[-1], bb_sup_sync.iloc[-1], bb_med_sync.iloc[-1], bb_inf_sync.iloc[-1],
+                                            adx_sync.iloc[-1],
+                                            cripto, qtd_min_para_operar, subconta, 'compra',
+                                            df_consolidado, df_1w, df_1d, df_4h
+                                        )
+                                    )
 
-                                    logger.agent(LogCategory.AGENT_RESPONSE, "Resposta Entry Evaluator", MODULE_NAME,
-                                        agent_name="Entry Evaluator MR", symbol=cripto, response_content=resposta.content)
+                                    logger.agent(
+                                        LogCategory.AGENT_RESPONSE,
+                                        "Resposta Entry Evaluator",
+                                        MODULE_NAME,
+                                        agent_name="Entry Evaluator MR",
+                                        symbol=cripto,
+                                        response_content=resposta.content
+                                    )
 
                                     abriu_trade = TradeEntryEvaluatorParser.processar_resposta(
-                                        resposta, cripto, subconta, tempo_grafico, risco_por_operacao.value, logger)
+                                        resposta, cripto, subconta, tempo_grafico, risco_por_operacao.value, logger
+                                    )
                                     if abriu_trade:
                                         vela_abertura_trade = df_consolidado.index[-1]
                                         ultima_execucao_trade_conductor = datetime.now()
@@ -369,28 +389,43 @@ def start_live_trading_bot(
                                     df_4h = busca_velas(cripto, '240', [9, 21])
                                     df_4h = prepare_market_data(df_4h, use_emas=True, emas_periods=[200], use_peaks=True, peaks_distance=21)
 
-                                    logger.agent(LogCategory.AGENT_EXECUTION,
-                                        "Sinal MR VENDA confirmado. Iniciando Entry Evaluator.", MODULE_NAME,
-                                        agent_name="Entry Evaluator MR", symbol=cripto,
-                                        rsi=round(rsi_sync.iloc[-1], 2), bb_sup=round(bb_sup_sync.iloc[-1], 5),
-                                        bb_med_alvo=round(bb_med_sync.iloc[-1], 5), adx=round(adx_sync.iloc[-1], 2))
+                                    logger.agent(
+                                        LogCategory.AGENT_EXECUTION,
+                                        "Sinal MR VENDA confirmado. Iniciando Entry Evaluator.",
+                                        MODULE_NAME,
+                                        agent_name="Entry Evaluator MR",
+                                        symbol=cripto,
+                                        rsi=round(rsi_sync.iloc[-1], 2),
+                                        bb_sup=round(bb_sup_sync.iloc[-1], 5),
+                                        bb_med_alvo=round(bb_med_sync.iloc[-1], 5),
+                                        adx=round(adx_sync.iloc[-1], 2)
+                                    )
 
-                                    resposta = trade_entry_evaluator.run(prompt_trade_entry_evaluator(
-                                        saldo, tempo_grafico,
-                                        rsi_periodo, rsi_sobrevenda, rsi_sobrecompra,
-                                        bb_periodo, bb_desvio_padrao,
-                                        adx_periodo, adx_limite_maximo,
-                                        rsi_sync.iloc[-1], bb_sup_sync.iloc[-1], bb_med_sync.iloc[-1], bb_inf_sync.iloc[-1],
-                                        adx_sync.iloc[-1],
-                                        cripto, qtd_min_para_operar, subconta, 'venda',
-                                        df_consolidado, df_1w, df_1d, df_4h
-                                    ))
+                                    resposta = trade_entry_evaluator.run(
+                                        prompt_trade_entry_evaluator(
+                                            saldo, tempo_grafico,
+                                            rsi_periodo, rsi_sobrevenda, rsi_sobrecompra,
+                                            bb_periodo, bb_desvio_padrao,
+                                            adx_periodo, adx_limite_maximo,
+                                            rsi_sync.iloc[-1], bb_sup_sync.iloc[-1], bb_med_sync.iloc[-1], bb_inf_sync.iloc[-1],
+                                            adx_sync.iloc[-1],
+                                            cripto, qtd_min_para_operar, subconta, 'venda',
+                                            df_consolidado, df_1w, df_1d, df_4h
+                                        )
+                                    )
 
-                                    logger.agent(LogCategory.AGENT_RESPONSE, "Resposta Entry Evaluator", MODULE_NAME,
-                                        agent_name="Entry Evaluator MR", symbol=cripto, response_content=resposta.content)
+                                    logger.agent(
+                                        LogCategory.AGENT_RESPONSE,
+                                        "Resposta Entry Evaluator",
+                                        MODULE_NAME,
+                                        agent_name="Entry Evaluator MR",
+                                        symbol=cripto,
+                                        response_content=resposta.content
+                                    )
 
                                     abriu_trade = TradeEntryEvaluatorParser.processar_resposta(
-                                        resposta, cripto, subconta, tempo_grafico, risco_por_operacao.value, logger)
+                                        resposta, cripto, subconta, tempo_grafico, risco_por_operacao.value, logger
+                                    )
                                     if abriu_trade:
                                         vela_abertura_trade = df_consolidado.index[-1]
                                         ultima_execucao_trade_conductor = datetime.now()
