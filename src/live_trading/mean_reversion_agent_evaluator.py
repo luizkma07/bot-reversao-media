@@ -29,7 +29,7 @@ MODULE_NAME = Path(__file__).stem
 CB_STATE_FILE = Path(__file__).parent.parent.parent / "circuit_breaker_state.json"
 
 subconta = 1
-cripto = 'XRPUSDT'
+cripto = 'ETHUSDT'
 tempo_grafico = '60'
 frequencia_agente_horas = 4
 executar_agente_no_start = False
