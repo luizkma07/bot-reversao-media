@@ -116,14 +116,6 @@ def volume_nao_e_anomalia(df, periodo=20, multiplicador_max=2.0, logger=None, sy
         volume_sinal = df['volume'].iloc[-2]
         limite = media_volume * multiplicador_max
         eh_normal = volume_sinal <= limite
-        if logger:
-            status = "OK" if eh_normal else "ANOMALO"
-            logger.info(
-                LogCategory.TRADE_SEARCH,
-                f"Volume {status}: {volume_sinal:.0f} / limite {limite:.0f}",
-                module,
-                symbol=symbol
-            )
         return eh_normal
     except Exception:
         return True
@@ -135,19 +127,11 @@ def mercado_ok_para_entrada(df, lado, adx_s, plus_di_s, minus_di_s, adx_limite=2
         pdi_v = plus_di_s.iloc[-1]
         mdi_v = minus_di_s.iloc[-1]
         if adx_v >= adx_limite:
-            if logger:
-                logger.info(LogCategory.TRADE_SEARCH, f"Tendencia ADX:{adx_v:.2f}>={adx_limite}. Bloqueando MR.", module, symbol=symbol)
             return False
         if lado.lower() == 'compra' and mdi_v > di_limite:
-            if logger:
-                logger.warning(LogCategory.TRADE_SEARCH, f"Pressao baixista -DI:{mdi_v:.2f}>{di_limite}. Bloqueando Long.", module, symbol=symbol)
             return False
         if lado.lower() == 'venda' and pdi_v > di_limite:
-            if logger:
-                logger.warning(LogCategory.TRADE_SEARCH, f"Pressao altista +DI:{pdi_v:.2f}>{di_limite}. Bloqueando Short.", module, symbol=symbol)
             return False
-        if logger:
-            logger.info(LogCategory.TRADE_SEARCH, f"Range OK ADX:{adx_v:.2f} +DI:{pdi_v:.2f} -DI:{mdi_v:.2f}", module, symbol=symbol)
         return True
     except Exception:
         return True
