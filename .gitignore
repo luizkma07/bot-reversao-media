@@ -1,0 +1,27 @@
+# Ambiente Python
+.env
+*.pyc
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs e outputs
+*.log
+src/agentes/outputs/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Sistema
+.DS_Store
+Thumbs.db
