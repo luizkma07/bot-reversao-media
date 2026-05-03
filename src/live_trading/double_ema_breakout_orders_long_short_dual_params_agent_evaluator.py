@@ -107,14 +107,15 @@ def mercado_tem_volatilidade_suficiente(df, periodo=14, multiplicador=0.6, logge
         volatilidade_ok = atr_atual >= limite_minimo
 
         if logger:
-            if volatilidade_ok:
-                logger.info(LogCategory.TRADE_SEARCH,
-                    f"✅ Volatilidade OK — ATR atual: {atr_atual:.4f} | Mínimo exigido: {limite_minimo:.4f}",
-                    module, symbol=symbol)
-            else:
-                logger.info(LogCategory.TRADE_SEARCH,
-                    f"⏸️ Mercado lateral detectado — ATR atual: {atr_atual:.4f} < Mínimo: {limite_minimo:.4f}. Aguardando volatilidade.",
-                    module, symbol=symbol)
+            pass # Logs silenciados
+            # if volatilidade_ok:
+            #     logger.info(LogCategory.TRADE_SEARCH,
+            #         f"✅ Volatilidade OK — ATR atual: {atr_atual:.4f} | Mínimo exigido: {limite_minimo:.4f}",
+            #         module, symbol=symbol)
+            # else:
+            #     logger.info(LogCategory.TRADE_SEARCH,
+            #         f"⏸️ Mercado lateral detectado — ATR atual: {atr_atual:.4f} < Mínimo: {limite_minimo:.4f}. Aguardando volatilidade.",
+            #         module, symbol=symbol)
 
         return volatilidade_ok
     except Exception:
@@ -226,8 +227,9 @@ def start_live_trading_bot(
                 symbol=cripto, proxima_execucao=next_execution.strftime("%Y-%m-%d %H:%M:%S"),
                 frequencia_agente_horas=frequencia_agente_horas, status="Aguardando stop, alvo ou avaliação do condutor")
     else:
-        logger.info(LogCategory.TRADE_SEARCH, "🔍 Procurando oportunidades de trade", MODULE_NAME,
-            subconta=subconta, symbol=cripto, tempo_grafico=tempo_grafico, lado_operacao=lado_operacao.value)
+        pass # Log de procurado oportunidades silenciado
+        # logger.info(LogCategory.TRADE_SEARCH, "🔍 Procurando oportunidades de trade", MODULE_NAME,
+        #     subconta=subconta, symbol=cripto, tempo_grafico=tempo_grafico, lado_operacao=lado_operacao.value)
 
     while True:
         # Verificar sinal de parada
@@ -307,8 +309,8 @@ def start_live_trading_bot(
                         vela_fechou_trade = df.index[-1]
                         logger.trading(LogCategory.MANUAL_CLOSE, "Trade fechado manualmente na corretora", MODULE_NAME,
                             symbol=cripto, tempo_abertura=df.index[-1])
-                        logger.info(LogCategory.TRADE_SEARCH, "🔍 Procurando oportunidades de trade", MODULE_NAME,
-                            subconta=subconta, symbol=cripto, tempo_grafico=tempo_grafico, lado_operacao=lado_operacao.value)
+                        # logger.info(LogCategory.TRADE_SEARCH, "🔍 Procurando oportunidades de trade", MODULE_NAME,
+                        #     subconta=subconta, symbol=cripto, tempo_grafico=tempo_grafico, lado_operacao=lado_operacao.value)
 
                 elif estado_de_trade == EstadoDeTrade.VENDIDO:
                     estado_de_trade, preco_entrada, preco_stop, preco_alvo, tamanho_posicao, trailing_stop = tem_trade_aberto(cripto, subconta)
@@ -357,8 +359,8 @@ def start_live_trading_bot(
                         vela_fechou_trade = df.index[-1]
                         logger.trading(LogCategory.MANUAL_CLOSE, "Trade fechado manualmente na corretora", MODULE_NAME,
                             symbol=cripto, tempo_abertura=df.index[-1])
-                        logger.info(LogCategory.TRADE_SEARCH, "🔍 Procurando oportunidades de trade", MODULE_NAME,
-                            subconta=subconta, symbol=cripto, tempo_grafico=tempo_grafico, lado_operacao=lado_operacao.value)
+                        # logger.info(LogCategory.TRADE_SEARCH, "🔍 Procurando oportunidades de trade", MODULE_NAME,
+                        #     subconta=subconta, symbol=cripto, tempo_grafico=tempo_grafico, lado_operacao=lado_operacao.value)
 
                 elif estado_de_trade == EstadoDeTrade.DE_FORA and df.index[-1] != vela_fechou_trade:
                     if compras_habilitadas:
@@ -416,8 +418,9 @@ def start_live_trading_bot(
                                                 logger.agent(LogCategory.AGENT_SCHEDULE, "Análise do condutor programada", MODULE_NAME,
                                                     agent_name="Trade Conductor", symbol=cripto, proxima_execucao=next_execution)
                                             else:
-                                                logger.info(LogCategory.TRADE_SEARCH, "🔍 Procurando oportunidades de trade", MODULE_NAME,
-                                                    subconta=subconta, symbol=cripto, tempo_grafico=tempo_grafico, lado_operacao=lado_operacao.value)
+                                                pass # Log silenciado
+                                                # logger.info(LogCategory.TRADE_SEARCH, "🔍 Procurando oportunidades de trade", MODULE_NAME,
+                                                #     subconta=subconta, symbol=cripto, tempo_grafico=tempo_grafico, lado_operacao=lado_operacao.value)
 
                     if vendas_habilitadas:
                         vela_venda_condition = df['fechamento'].iloc[-2] < df['ema_rapida_venda'].iloc[-2] and df['fechamento'].iloc[-2] < df['ema_lenta_venda'].iloc[-2]
@@ -473,8 +476,9 @@ def start_live_trading_bot(
                                                 logger.agent(LogCategory.AGENT_SCHEDULE, "Análise do condutor programada", MODULE_NAME,
                                                     agent_name="Trade Conductor", symbol=cripto, proxima_execucao=next_execution)
                                             else:
-                                                logger.info(LogCategory.TRADE_SEARCH, "🔍 Procurando oportunidades de trade", MODULE_NAME,
-                                                    subconta=subconta, symbol=cripto, tempo_grafico=tempo_grafico, lado_operacao=lado_operacao.value)
+                                                pass # Log silenciado
+                                                # logger.info(LogCategory.TRADE_SEARCH, "🔍 Procurando oportunidades de trade", MODULE_NAME,
+                                                #     subconta=subconta, symbol=cripto, tempo_grafico=tempo_grafico, lado_operacao=lado_operacao.value)
 
         # ═══════════════════════════════════════════════════════════════════
         # [MELHORIA #3] TRATAMENTO ESPECÍFICO DE ERROS DA EXCHANGE
