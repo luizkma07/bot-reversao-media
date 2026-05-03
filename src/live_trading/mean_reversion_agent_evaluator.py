@@ -217,58 +217,88 @@ def start_live_trading_bot(
                     vela_fechou_trade = df.index[-1]
                 # ── GESTAO DE POSICAO ABERTA ────────────────────────────────────────
                 if estado_de_trade == EstadoDeTrade.COMPRADO:
-                    estado_de_trade, preco_entrada, preco_stop, preco_alvo, tamanho_posicao, trailing_stop = tem_trade_aberto(cripto, subconta)
-                    ultima_execucao_trade_conductor = executar_trade_conductor_se_necessario(
-                        ultima_execucao_trade_conductor, frequencia_agente_horas, df, cripto, subconta,
-                        tempo_grafico, estado_de_trade, preco_entrada, preco_alvo, preco_stop,
-                        tamanho_posicao, qtd_min_para_operar, trailing_stop, vela_abertura_trade, logger)
+                    p_entrada_antigo = preco_entrada
+                    p_stop_antigo = preco_stop
+                    p_alvo_antigo = preco_alvo
 
-                    if df['maxima'].iloc[-1] >= preco_alvo and preco_alvo != 0:
-                        estado_de_trade = EstadoDeTrade.DE_FORA
-                        vela_fechou_trade = df.index[-1]
-                        stops_consecutivos = 0
-                        salvar_estado_cb(stops_consecutivos, bloqueio_ate, logger)
-                        logger.trading(LogCategory.TARGET_HIT, "Alvo BB_Media atingido", MODULE_NAME, symbol=cripto)
-                    elif df['minima'].iloc[-1] <= preco_stop:
-                        estado_de_trade = EstadoDeTrade.DE_FORA
-                        vela_fechou_trade = df.index[-1]
-                        stops_consecutivos += 1
-                        salvar_estado_cb(stops_consecutivos, bloqueio_ate, logger)
-                        logger.trading(LogCategory.STOP_HIT, "Stop atingido", MODULE_NAME, symbol=cripto, stop=preco_stop)
-                        if stops_consecutivos >= MAX_STOPS_CONSECUTIVOS:
-                            bloqueio_ate = time.time() + (PAUSA_CIRCUIT_BREAKER_HORAS * 3600)
+                    estado_de_trade, preco_entrada, preco_stop, preco_alvo, tamanho_posicao, trailing_stop = tem_trade_aberto(cripto, subconta)
+                    
+                    if estado_de_trade == EstadoDeTrade.COMPRADO:
+                        ultima_execucao_trade_conductor = executar_trade_conductor_se_necessario(
+                            ultima_execucao_trade_conductor, frequencia_agente_horas, df, cripto, subconta,
+                            tempo_grafico, estado_de_trade, preco_entrada, preco_alvo, preco_stop,
+                            tamanho_posicao, qtd_min_para_operar, trailing_stop, vela_abertura_trade, logger)
+                    else:
+                        if df['maxima'].iloc[-1] >= p_alvo_antigo and p_alvo_antigo != 0:
+                            estado_de_trade = EstadoDeTrade.DE_FORA
+                            vela_fechou_trade = df.index[-1]
                             stops_consecutivos = 0
                             salvar_estado_cb(stops_consecutivos, bloqueio_ate, logger)
-                            logger.critical(LogCategory.FATAL_ERROR, "Circuit Breaker ativado e salvo em disco.", MODULE_NAME, symbol=cripto)
-                    elif estado_de_trade == EstadoDeTrade.DE_FORA:
-                        vela_fechou_trade = df.index[-1]
+                            
+                            pnl_pct = ((p_alvo_antigo - p_entrada_antigo) / p_entrada_antigo) * 100
+                            logger.info(LogCategory.POSITION_STATUS, f"💰 [BOT REVERSÃO] Relatório de PnL | Entrada: {p_entrada_antigo:.2f} | Saída: {p_alvo_antigo:.2f} | Status: Take Profit | PnL: +{pnl_pct:.2f}%", MODULE_NAME, symbol=cripto)
+                            
+                        elif df['minima'].iloc[-1] <= p_stop_antigo and p_stop_antigo != 0:
+                            estado_de_trade = EstadoDeTrade.DE_FORA
+                            vela_fechou_trade = df.index[-1]
+                            stops_consecutivos += 1
+                            salvar_estado_cb(stops_consecutivos, bloqueio_ate, logger)
+                            
+                            pnl_pct = ((p_stop_antigo - p_entrada_antigo) / p_entrada_antigo) * 100
+                            logger.info(LogCategory.POSITION_STATUS, f"🛑 [BOT REVERSÃO] Relatório de PnL | Entrada: {p_entrada_antigo:.2f} | Saída: {p_stop_antigo:.2f} | Status: Stop Loss | PnL: {pnl_pct:.2f}%", MODULE_NAME, symbol=cripto)
+
+                            if stops_consecutivos >= MAX_STOPS_CONSECUTIVOS:
+                                bloqueio_ate = time.time() + (PAUSA_CIRCUIT_BREAKER_HORAS * 3600)
+                                stops_consecutivos = 0
+                                salvar_estado_cb(stops_consecutivos, bloqueio_ate, logger)
+                                logger.critical(LogCategory.FATAL_ERROR, "Circuit Breaker ativado e salvo em disco.", MODULE_NAME, symbol=cripto)
+                        else:
+                            vela_fechou_trade = df.index[-1]
+                            preco_saida = df['fechamento'].iloc[-1]
+                            pnl_pct = ((preco_saida - p_entrada_antigo) / p_entrada_antigo) * 100
+                            logger.info(LogCategory.POSITION_STATUS, f"⚠️ [BOT REVERSÃO] Relatório de PnL | Entrada: {p_entrada_antigo:.2f} | Saída (Aprox): {preco_saida:.2f} | Status: Fechamento Manual | PnL: {pnl_pct:.2f}%", MODULE_NAME, symbol=cripto)
 
                 elif estado_de_trade == EstadoDeTrade.VENDIDO:
-                    estado_de_trade, preco_entrada, preco_stop, preco_alvo, tamanho_posicao, trailing_stop = tem_trade_aberto(cripto, subconta)
-                    ultima_execucao_trade_conductor = executar_trade_conductor_se_necessario(
-                        ultima_execucao_trade_conductor, frequencia_agente_horas, df, cripto, subconta,
-                        tempo_grafico, estado_de_trade, preco_entrada, preco_alvo, preco_stop,
-                        tamanho_posicao, qtd_min_para_operar, trailing_stop, vela_abertura_trade, logger)
+                    p_entrada_antigo = preco_entrada
+                    p_stop_antigo = preco_stop
+                    p_alvo_antigo = preco_alvo
 
-                    if df['minima'].iloc[-1] <= preco_alvo:
-                        estado_de_trade = EstadoDeTrade.DE_FORA
-                        vela_fechou_trade = df.index[-1]
-                        stops_consecutivos = 0
-                        salvar_estado_cb(stops_consecutivos, bloqueio_ate, logger)
-                        logger.trading(LogCategory.TARGET_HIT, "Alvo BB_Media atingido", MODULE_NAME, symbol=cripto)
-                    elif df['maxima'].iloc[-1] >= preco_stop and preco_stop != 0:
-                        estado_de_trade = EstadoDeTrade.DE_FORA
-                        vela_fechou_trade = df.index[-1]
-                        stops_consecutivos += 1
-                        salvar_estado_cb(stops_consecutivos, bloqueio_ate, logger)
-                        logger.trading(LogCategory.STOP_HIT, "Stop atingido", MODULE_NAME, symbol=cripto, stop=preco_stop)
-                        if stops_consecutivos >= MAX_STOPS_CONSECUTIVOS:
-                            bloqueio_ate = time.time() + (PAUSA_CIRCUIT_BREAKER_HORAS * 3600)
+                    estado_de_trade, preco_entrada, preco_stop, preco_alvo, tamanho_posicao, trailing_stop = tem_trade_aberto(cripto, subconta)
+                    
+                    if estado_de_trade == EstadoDeTrade.VENDIDO:
+                        ultima_execucao_trade_conductor = executar_trade_conductor_se_necessario(
+                            ultima_execucao_trade_conductor, frequencia_agente_horas, df, cripto, subconta,
+                            tempo_grafico, estado_de_trade, preco_entrada, preco_alvo, preco_stop,
+                            tamanho_posicao, qtd_min_para_operar, trailing_stop, vela_abertura_trade, logger)
+                    else:
+                        if df['minima'].iloc[-1] <= p_alvo_antigo and p_alvo_antigo != 0:
+                            estado_de_trade = EstadoDeTrade.DE_FORA
+                            vela_fechou_trade = df.index[-1]
                             stops_consecutivos = 0
                             salvar_estado_cb(stops_consecutivos, bloqueio_ate, logger)
-                            logger.critical(LogCategory.FATAL_ERROR, "Circuit Breaker ativado e salvo em disco.", MODULE_NAME, symbol=cripto)
-                    elif estado_de_trade == EstadoDeTrade.DE_FORA:
-                        vela_fechou_trade = df.index[-1]
+                            
+                            pnl_pct = ((p_entrada_antigo - p_alvo_antigo) / p_entrada_antigo) * 100
+                            logger.info(LogCategory.POSITION_STATUS, f"💰 [BOT REVERSÃO] Relatório de PnL | Entrada: {p_entrada_antigo:.2f} | Saída: {p_alvo_antigo:.2f} | Status: Take Profit | PnL: +{pnl_pct:.2f}%", MODULE_NAME, symbol=cripto)
+                            
+                        elif df['maxima'].iloc[-1] >= p_stop_antigo and p_stop_antigo != 0:
+                            estado_de_trade = EstadoDeTrade.DE_FORA
+                            vela_fechou_trade = df.index[-1]
+                            stops_consecutivos += 1
+                            salvar_estado_cb(stops_consecutivos, bloqueio_ate, logger)
+                            
+                            pnl_pct = ((p_entrada_antigo - p_stop_antigo) / p_entrada_antigo) * 100
+                            logger.info(LogCategory.POSITION_STATUS, f"🛑 [BOT REVERSÃO] Relatório de PnL | Entrada: {p_entrada_antigo:.2f} | Saída: {p_stop_antigo:.2f} | Status: Stop Loss | PnL: {pnl_pct:.2f}%", MODULE_NAME, symbol=cripto)
+
+                            if stops_consecutivos >= MAX_STOPS_CONSECUTIVOS:
+                                bloqueio_ate = time.time() + (PAUSA_CIRCUIT_BREAKER_HORAS * 3600)
+                                stops_consecutivos = 0
+                                salvar_estado_cb(stops_consecutivos, bloqueio_ate, logger)
+                                logger.critical(LogCategory.FATAL_ERROR, "Circuit Breaker ativado e salvo em disco.", MODULE_NAME, symbol=cripto)
+                        else:
+                            vela_fechou_trade = df.index[-1]
+                            preco_saida = df['fechamento'].iloc[-1]
+                            pnl_pct = ((p_entrada_antigo - preco_saida) / p_entrada_antigo) * 100
+                            logger.info(LogCategory.POSITION_STATUS, f"⚠️ [BOT REVERSÃO] Relatório de PnL | Entrada: {p_entrada_antigo:.2f} | Saída (Aprox): {preco_saida:.2f} | Status: Fechamento Manual | PnL: {pnl_pct:.2f}%", MODULE_NAME, symbol=cripto)
 
                 # ── BUSCA DE NOVO SETUP ──────────────────────────────────────────────
                 elif estado_de_trade == EstadoDeTrade.DE_FORA and df.index[-1] != vela_fechou_trade:
