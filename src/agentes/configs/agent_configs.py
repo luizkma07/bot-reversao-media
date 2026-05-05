@@ -24,8 +24,8 @@ class ModelConfigs:
 
     # Instancia Gemini apenas se a lib estiver disponível
     if GEMINI_AVAILABLE:
-        GEMINI_FLASH = Gemini(id="gemini-2.5-flash", response_mime_type="application/json")
-        GEMINI_PRO = Gemini(id="gemini-2.5-pro", response_mime_type="application/json")
+        GEMINI_FLASH = Gemini(id="gemini-2.5-flash")
+        GEMINI_PRO = Gemini(id="gemini-2.5-pro")
     # GROQ_LLAMA = Groq(id="llama-3.3-70b-versatile")
 
     MODEL_MAP = {
