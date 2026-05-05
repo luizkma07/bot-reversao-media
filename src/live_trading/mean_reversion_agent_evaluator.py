@@ -235,7 +235,7 @@ def start_live_trading_bot(
                             stops_consecutivos = 0
                             salvar_estado_cb(stops_consecutivos, bloqueio_ate, logger)
                             
-                            pnl_pct = ((p_alvo_antigo - p_entrada_antigo) / p_entrada_antigo) * 100
+                            pnl_pct = ((p_alvo_antigo - p_entrada_antigo) / p_entrada_antigo) * 100 if p_entrada_antigo > 0 else 0
                             logger.info(LogCategory.POSITION_STATUS, f"💰 [BOT REVERSÃO] Relatório de PnL | Entrada: {p_entrada_antigo:.2f} | Saída: {p_alvo_antigo:.2f} | Status: Take Profit | PnL: +{pnl_pct:.2f}%", MODULE_NAME, symbol=cripto)
                             
                         elif df['minima'].iloc[-1] <= p_stop_antigo and p_stop_antigo != 0:
@@ -244,7 +244,7 @@ def start_live_trading_bot(
                             stops_consecutivos += 1
                             salvar_estado_cb(stops_consecutivos, bloqueio_ate, logger)
                             
-                            pnl_pct = ((p_stop_antigo - p_entrada_antigo) / p_entrada_antigo) * 100
+                            pnl_pct = ((p_stop_antigo - p_entrada_antigo) / p_entrada_antigo) * 100 if p_entrada_antigo > 0 else 0
                             logger.info(LogCategory.POSITION_STATUS, f"🛑 [BOT REVERSÃO] Relatório de PnL | Entrada: {p_entrada_antigo:.2f} | Saída: {p_stop_antigo:.2f} | Status: Stop Loss | PnL: {pnl_pct:.2f}%", MODULE_NAME, symbol=cripto)
 
                             if stops_consecutivos >= MAX_STOPS_CONSECUTIVOS:
@@ -255,7 +255,7 @@ def start_live_trading_bot(
                         else:
                             vela_fechou_trade = df.index[-1]
                             preco_saida = df['fechamento'].iloc[-1]
-                            pnl_pct = ((preco_saida - p_entrada_antigo) / p_entrada_antigo) * 100
+                            pnl_pct = ((preco_saida - p_entrada_antigo) / p_entrada_antigo) * 100 if p_entrada_antigo > 0 else 0
                             logger.info(LogCategory.POSITION_STATUS, f"⚠️ [BOT REVERSÃO] Relatório de PnL | Entrada: {p_entrada_antigo:.2f} | Saída (Aprox): {preco_saida:.2f} | Status: Fechamento Manual | PnL: {pnl_pct:.2f}%", MODULE_NAME, symbol=cripto)
 
                 elif estado_de_trade == EstadoDeTrade.VENDIDO:
@@ -277,7 +277,7 @@ def start_live_trading_bot(
                             stops_consecutivos = 0
                             salvar_estado_cb(stops_consecutivos, bloqueio_ate, logger)
                             
-                            pnl_pct = ((p_entrada_antigo - p_alvo_antigo) / p_entrada_antigo) * 100
+                            pnl_pct = ((p_entrada_antigo - p_alvo_antigo) / p_entrada_antigo) * 100 if p_entrada_antigo > 0 else 0
                             logger.info(LogCategory.POSITION_STATUS, f"💰 [BOT REVERSÃO] Relatório de PnL | Entrada: {p_entrada_antigo:.2f} | Saída: {p_alvo_antigo:.2f} | Status: Take Profit | PnL: +{pnl_pct:.2f}%", MODULE_NAME, symbol=cripto)
                             
                         elif df['maxima'].iloc[-1] >= p_stop_antigo and p_stop_antigo != 0:
@@ -286,7 +286,7 @@ def start_live_trading_bot(
                             stops_consecutivos += 1
                             salvar_estado_cb(stops_consecutivos, bloqueio_ate, logger)
                             
-                            pnl_pct = ((p_entrada_antigo - p_stop_antigo) / p_entrada_antigo) * 100
+                            pnl_pct = ((p_entrada_antigo - p_stop_antigo) / p_entrada_antigo) * 100 if p_entrada_antigo > 0 else 0
                             logger.info(LogCategory.POSITION_STATUS, f"🛑 [BOT REVERSÃO] Relatório de PnL | Entrada: {p_entrada_antigo:.2f} | Saída: {p_stop_antigo:.2f} | Status: Stop Loss | PnL: {pnl_pct:.2f}%", MODULE_NAME, symbol=cripto)
 
                             if stops_consecutivos >= MAX_STOPS_CONSECUTIVOS:
@@ -297,7 +297,7 @@ def start_live_trading_bot(
                         else:
                             vela_fechou_trade = df.index[-1]
                             preco_saida = df['fechamento'].iloc[-1]
-                            pnl_pct = ((p_entrada_antigo - preco_saida) / p_entrada_antigo) * 100
+                            pnl_pct = ((p_entrada_antigo - preco_saida) / p_entrada_antigo) * 100 if p_entrada_antigo > 0 else 0
                             logger.info(LogCategory.POSITION_STATUS, f"⚠️ [BOT REVERSÃO] Relatório de PnL | Entrada: {p_entrada_antigo:.2f} | Saída (Aprox): {preco_saida:.2f} | Status: Fechamento Manual | PnL: {pnl_pct:.2f}%", MODULE_NAME, symbol=cripto)
 
                 # ── BUSCA DE NOVO SETUP ──────────────────────────────────────────────

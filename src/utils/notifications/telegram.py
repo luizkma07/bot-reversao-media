@@ -80,11 +80,13 @@ class TelegramLogNotifier(BaseNotifier):
                 LogCategory.AGENT_ACTION,
                 LogCategory.AGENT_DECISION,
                 LogCategory.POSITION_OPEN,  # Abertura de posição (Entry Evaluator)
+                LogCategory.POSITION_STATUS,  # Atualizações de PnL e status
                 LogCategory.LOW_RISK_REWARD,  # Warnings de risco/retorno
                 LogCategory.INVALID_PRICES,  # Warnings de preços inválidos
                 LogCategory.INVALID_ORDER_QTY,  # Warnings de quantidade inválida
                 LogCategory.EXECUTION_ERROR,  # Erros de execução gerais
                 LogCategory.TRADE_OPEN_ERROR,  # Erros ao abrir posição
+                LogCategory.POSITION_STATUS,   # Fechamentos (Target, Stop, Manual)
                 # LogCategory.API_ERROR,  # Erros de API
                 # LogCategory.CRITICAL_ERROR,  # Erros críticos
                 # LogCategory.UNKNOWN_ERROR  # Erros desconhecidos
@@ -170,6 +172,9 @@ class TelegramLogNotifier(BaseNotifier):
         
         elif category == LogCategory.POSITION_OPEN:
             return self._format_position_open(log_event, symbol, timestamp)
+            
+        elif category == LogCategory.POSITION_STATUS:
+            return self._format_position_status(log_event, symbol, timestamp)
         
         elif category in [LogCategory.LOW_RISK_REWARD, LogCategory.INVALID_PRICES, LogCategory.INVALID_ORDER_QTY]:
             return self._format_warning(log_event, symbol, timestamp)
@@ -453,6 +458,8 @@ class TelegramLogNotifier(BaseNotifier):
 
 Par: {symbol}"""
     
+    def _format_position_status(self, event: LogEvent, symbol: str, timestamp: str) -> str:
+        return f"{event.message}\n\n📊 <b>Par:</b> {symbol}\n🕐 <b>Horário:</b> {timestamp}\n\n#TradingBot #PnL #{symbol.replace('USDT', '')}"
 
 
 def setup_telegram_notifications(
