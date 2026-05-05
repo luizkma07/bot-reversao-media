@@ -56,7 +56,7 @@ def carregar_dados_historicos(cripto, tempo_grafico, emas, start, end, pular_vel
         velas_sem_estrutura = []
 
         while start_timestamp < end_timestamp:
-            resposta = cliente.get_kline(symbol=cripto, interval=tempo_grafico, limit=1000, start=start_timestamp)
+            resposta = busca_cliente(1).get_kline(symbol=cripto, interval=tempo_grafico, limit=1000, start=start_timestamp)
             velas_sem_estrutura += resposta['result']['list'][::-1]
             start_timestamp = int(velas_sem_estrutura[-1][0]) + 1000
 
@@ -89,9 +89,9 @@ def carregar_dados_historicos(cripto, tempo_grafico, emas, start, end, pular_vel
 
     return df
 
-def busca_velas(cripto, tempo_grafico, emas):
+def busca_velas(cripto, tempo_grafico, emas, nro_subconta=1):
     # Busca as velas sem estrutura da corretora e inverte a lista
-    resposta = cliente.get_kline(symbol=cripto, interval=tempo_grafico, limit=1000)
+    resposta = busca_cliente(nro_subconta).get_kline(symbol=cripto, interval=tempo_grafico, limit=1000)
     velas_sem_estrutura = resposta['result']['list'][::-1]
     
     # Cria um DataFrame com as velas
@@ -466,11 +466,11 @@ def busca_pnl(nro_subconta, dias=30):
     
     return df_trades_pnl
 
-def busca_lsr_open_interest(cripto, tempo_grafico, quantidade):
-    resposta_lsr = cliente.get_long_short_ratio(category='linear', symbol=cripto, period=tempo_grafico, limit=quantidade)
+def busca_lsr_open_interest(cripto, tempo_grafico, quantidade, nro_subconta=1):
+    resposta_lsr = busca_cliente(nro_subconta).get_long_short_ratio(category='linear', symbol=cripto, period=tempo_grafico, limit=quantidade)
     lsr = resposta_lsr['result']['list']
 
-    resposta_open_interest = cliente.get_open_interest(category='linear', symbol=cripto, intervalTime=tempo_grafico, limit=quantidade)
+    resposta_open_interest = busca_cliente(nro_subconta).get_open_interest(category='linear', symbol=cripto, intervalTime=tempo_grafico, limit=quantidade)
     open_interest = resposta_open_interest['result']['list']
 
     lsr_open_interest = []
