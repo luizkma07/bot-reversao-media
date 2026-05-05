@@ -1,3 +1,14 @@
+"""
+v3 - barbell agressivo
+[Data: 2026-05-04]
+Perfil: Agressivo Complementar
+- Tempo grafico: 30min
+- ADX limite: < 30
+- RSI: 38/62
+- Risco: MEDIO_BAIXO (1.5%)
+- Volume: 2.5x
+- Gatilhos de candle relaxados
+"""
 import sys
 import os
 import json
@@ -30,22 +41,22 @@ CB_STATE_FILE = Path(__file__).parent.parent.parent / "circuit_breaker_state.jso
 
 subconta = 1
 cripto = 'ETHUSDT'
-tempo_grafico = '60'
+tempo_grafico = '30'
 frequencia_agente_horas = 4
 executar_agente_no_start = False
 lado_operacao = LadoOperacao.AMBOS
-risco_por_operacao = RiscoOperacao.BAIXO
+risco_por_operacao = RiscoOperacao.MEDIO_BAIXO
 
 rsi_periodo = 14
-rsi_sobrevenda = 35
-rsi_sobrecompra = 65
+rsi_sobrevenda = 38
+rsi_sobrecompra = 62
 bb_periodo = 20
 bb_desvio_padrao = 2.0
 adx_periodo = 14
-adx_limite_maximo = 25
+adx_limite_maximo = 30
 di_limite_dominancia = 30
 volume_media_periodo = 20
-volume_multiplicador_max = 2.0
+volume_multiplicador_max = 2.5
 MAX_STOPS_CONSECUTIVOS = 3
 PAUSA_CIRCUIT_BREAKER_HORAS = 2
 
@@ -154,10 +165,15 @@ def start_live_trading_bot(
     vendas_habilitadas = lado_operacao in [LadoOperacao.AMBOS, LadoOperacao.APENAS_VENDA]
     logger = get_logger(bot_id)
 
-    logger.info(LogCategory.BOT_START, "Bot Mean Reversion iniciado (v2 - auditado)", MODULE_NAME,
+    logger.info(LogCategory.BOT_START,
+        "Bot MR BARBELL v3 iniciado — ETH/30min / Perfil Agressivo Complementar",
+        MODULE_NAME,
         subconta=subconta, symbol=cripto, tempo_grafico=tempo_grafico,
+        perfil="barbell_agressivo_v3",
         rsi_sobrevenda=rsi_sobrevenda, rsi_sobrecompra=rsi_sobrecompra,
-        adx_limite=adx_limite_maximo, di_limite=di_limite_dominancia)
+        adx_limite=adx_limite_maximo, di_limite=di_limite_dominancia,
+        volume_multiplicador=volume_multiplicador_max,
+        risco_por_operacao=risco_por_operacao.value)
 
     estado_de_trade = EstadoDeTrade.DE_FORA
     preco_entrada = 0.0
@@ -313,8 +329,7 @@ def start_live_trading_bot(
                         cond_bb_compra = df['fechamento'].iloc[-2] <= bb_inferior.iloc[-2]
                         cond_rsi_compra = rsi.iloc[-2] <= rsi_sobrevenda
                         cond_retorno_compra = (
-                            df['fechamento'].iloc[-1] > df['fechamento'].iloc[-2] and
-                            df['fechamento'].iloc[-1] > df['abertura'].iloc[-1]
+                            df['fechamento'].iloc[-1] > df['fechamento'].iloc[-2]
                         )
                         sinal_compra = cond_bb_compra and cond_rsi_compra and cond_retorno_compra
 
@@ -388,8 +403,7 @@ def start_live_trading_bot(
                         cond_rsi_venda = rsi.iloc[-2] >= rsi_sobrecompra
                         # FIX #4: vela atual deve ser vermelha (confirmacao de reversao)
                         cond_retorno_venda = (
-                            df['fechamento'].iloc[-1] < df['fechamento'].iloc[-2] and
-                            df['fechamento'].iloc[-1] < df['abertura'].iloc[-1]
+                            df['fechamento'].iloc[-1] < df['fechamento'].iloc[-2]
                         )
                         sinal_venda = cond_bb_venda and cond_rsi_venda and cond_retorno_venda
 
