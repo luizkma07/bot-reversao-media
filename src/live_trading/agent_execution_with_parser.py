@@ -127,9 +127,9 @@ def executar_trade_conductor_se_necessario(
         #             symbol=cripto, confidence=confianca, actions_count=len(acoes), 
         #             has_justification=bool(justificativa))
 
-        if confianca < 0.75:
+        if confianca < 0.65:
             logger.agent(LogCategory.AGENT_DECISION, "Confiança baixa - não executando ações do agente", MODULE_NAME,
-                agent_name="Trade Conductor", symbol=cripto, confidence=confianca, threshold=0.75, decision="NO_ACTION", action="confiança_baixa")
+                agent_name="Trade Conductor", symbol=cripto, confidence=confianca, threshold=0.65, decision="NO_ACTION", action="confiança_baixa")
         else:
             if acoes:
                 for acao in acoes:

@@ -116,7 +116,7 @@ class TradeEntryEvaluatorParser(BaseParser):
         return data
 
     def processar_resposta(resposta, cripto, subconta, tempo_grafico, risco_por_operacao, logger):
-        confianca_aceitavel = 0.75
+        confianca_aceitavel = 0.65
         risco_retorno_aceitavel = 1.5
         
         parser = TradeEntryEvaluatorParser()
