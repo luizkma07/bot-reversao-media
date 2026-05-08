@@ -83,8 +83,8 @@ def executar_trade_conductor_se_necessario(
     )
     
     if deve_executar_trade_conductor:
-        df_1w, df_1d, df = prepare_multi_timeframe_technical_data(df, cripto)
-        df_1h = busca_velas(cripto, '60', [9, 21])
+        df_1w, df_1d, df = prepare_multi_timeframe_technical_data(df, cripto, nro_subconta=subconta)
+        df_1h = busca_velas(cripto, '60', [9, 21], nro_subconta=subconta)
         df_1h = prepare_market_data(df_1h, use_emas=True, emas_periods=[200], use_peaks=True, peaks_distance=21)
 
         logger.agent(LogCategory.AGENT_EXECUTION, "🤖 Iniciando análise do trade conductor", MODULE_NAME, 

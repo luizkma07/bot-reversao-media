@@ -125,12 +125,12 @@ def prepare_market_data(
 
     return df
 
-def prepare_multi_timeframe_technical_data(df: pd.DataFrame, cripto: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    df_1w = busca_velas(cripto, 'W', [9, 21])
+def prepare_multi_timeframe_technical_data(df: pd.DataFrame, cripto: str, nro_subconta: int = 1) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    df_1w = busca_velas(cripto, 'W', [9, 21], nro_subconta=nro_subconta)
     if len(df_1w) >= 50:
         df_1w = prepare_market_data(df_1w, use_emas=True, emas_periods=[200], use_macd=True)
 
-    df_1d = busca_velas(cripto, 'D', [9, 21])
+    df_1d = busca_velas(cripto, 'D', [9, 21], nro_subconta=nro_subconta)
     if len(df_1d) >= 20:
         df_1d = prepare_market_data(df_1d, use_emas=True, emas_periods=[200], use_atr=True, atr_period=3, use_stoch=True, stoch_config=[5, 3, 3])
 

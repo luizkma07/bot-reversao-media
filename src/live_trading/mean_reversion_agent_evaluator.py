@@ -224,7 +224,7 @@ def start_live_trading_bot(
             continue
 
         try:
-            df = busca_velas(cripto, tempo_grafico, [9, 21])
+            df = busca_velas(cripto, tempo_grafico, [9, 21], nro_subconta=subconta)
 
             if df.empty:
                 logger.warning(LogCategory.EMPTY_DATA, "DataFrame vazio", MODULE_NAME, symbol=cripto)
@@ -345,7 +345,7 @@ def start_live_trading_bot(
                                     vela_executou_trade_entry_evaluator = df.index[-1]
 
                                     # FIX #1: enriquece df so APOS confirmacao do gatilho
-                                    df_1w, df_1d, df_consolidado = prepare_multi_timeframe_technical_data(df, cripto)
+                                    df_1w, df_1d, df_consolidado = prepare_multi_timeframe_technical_data(df, cripto, nro_subconta=subconta)
 
                                     # FIX #1+#2: recalcula indicadores no df consolidado para sincronia com o LLM
                                     rsi_sync = calcular_rsi(df_consolidado, rsi_periodo)
@@ -354,7 +354,7 @@ def start_live_trading_bot(
 
                                     # FIX #2: bb_med_sync e o alvo inegociavel passado ao prompt
                                     saldo = saldo_da_conta(subconta)
-                                    df_4h = busca_velas(cripto, '240', [9, 21])
+                                    df_4h = busca_velas(cripto, '240', [9, 21], nro_subconta=subconta)
                                     df_4h = prepare_market_data(df_4h, use_emas=True, emas_periods=[200], use_peaks=True, peaks_distance=21)
 
                                     logger.agent(
@@ -418,14 +418,14 @@ def start_live_trading_bot(
                                 if estado_de_trade == EstadoDeTrade.DE_FORA and df.index[-1] != vela_executou_trade_entry_evaluator:
                                     vela_executou_trade_entry_evaluator = df.index[-1]
 
-                                    df_1w, df_1d, df_consolidado = prepare_multi_timeframe_technical_data(df, cripto)
+                                    df_1w, df_1d, df_consolidado = prepare_multi_timeframe_technical_data(df, cripto, nro_subconta=subconta)
 
                                     rsi_sync = calcular_rsi(df_consolidado, rsi_periodo)
                                     bb_sup_sync, bb_med_sync, bb_inf_sync = calcular_bandas_bollinger(df_consolidado, bb_periodo, bb_desvio_padrao)
                                     adx_sync, _, _ = calcular_adx(df_consolidado, adx_periodo)
 
                                     saldo = saldo_da_conta(subconta)
-                                    df_4h = busca_velas(cripto, '240', [9, 21])
+                                    df_4h = busca_velas(cripto, '240', [9, 21], nro_subconta=subconta)
                                     df_4h = prepare_market_data(df_4h, use_emas=True, emas_periods=[200], use_peaks=True, peaks_distance=21)
 
                                     logger.agent(
