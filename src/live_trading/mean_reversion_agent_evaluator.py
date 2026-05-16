@@ -35,6 +35,7 @@ from agentes.parsers.trade_entry_evaluator_parser import TradeEntryEvaluatorPars
 from managers.data_manager import prepare_multi_timeframe_technical_data, prepare_market_data
 from utils.utilidades import calcular_risco_retorno_compra, calcular_risco_retorno_venda
 from utils.logging import get_logger, LogCategory
+from utils.orchestrator_client import FleetOrchestrator
 
 MODULE_NAME = Path(__file__).stem
 CB_STATE_FILE = Path(__file__).parent.parent.parent / "circuit_breaker_state.json"
@@ -211,10 +212,31 @@ def start_live_trading_bot(
         if not executar_agente_no_start:
             ultima_execucao_trade_conductor = datetime.now()
 
+    orchestrator = FleetOrchestrator(logger=logger)
+
     while True:
         if stop_flag and stop_flag.is_set():
             logger.info(LogCategory.BOT_STOP, "Bot recebeu sinal de parada", MODULE_NAME, symbol=cripto, bot_id=bot_id)
             break
+
+        # --- INTEGRAÇÃO ORQUESTRADOR ---
+        bot_state = orchestrator.get_bot_state('mean_reversion')
+        risco_efetivo_valor = risco_por_operacao.value
+        
+        if bot_state:
+            if bot_state.get('status') == 'PAUSED':
+                logger.info(LogCategory.TRADE_SEARCH, "Ordem do Orquestrador: Bot Pausado. Aguardando...", MODULE_NAME, symbol=cripto)
+                time.sleep(30)
+                continue
+            
+            # Atualiza ativo dinamicamente
+            if 'ativo' in bot_state:
+                cripto = bot_state['ativo']
+                
+            # Atualiza risco dinamicamente
+            if 'risco_efetivo' in bot_state:
+                risco_efetivo_valor = float(bot_state['risco_efetivo']) / 100.0
+        # -------------------------------
 
         if time.time() < bloqueio_ate:
             restante = int(bloqueio_ate - time.time())
@@ -392,7 +414,7 @@ def start_live_trading_bot(
                                     )
 
                                     abriu_trade = TradeEntryEvaluatorParser.processar_resposta(
-                                        resposta, cripto, subconta, tempo_grafico, risco_por_operacao.value, logger
+                                        resposta, cripto, subconta, tempo_grafico, risco_efetivo_valor, logger
                                     )
                                     if abriu_trade:
                                         vela_abertura_trade = df_consolidado.index[-1]
@@ -463,7 +485,7 @@ def start_live_trading_bot(
                                     )
 
                                     abriu_trade = TradeEntryEvaluatorParser.processar_resposta(
-                                        resposta, cripto, subconta, tempo_grafico, risco_por_operacao.value, logger
+                                        resposta, cripto, subconta, tempo_grafico, risco_efetivo_valor, logger
                                     )
                                     if abriu_trade:
                                         vela_abertura_trade = df_consolidado.index[-1]
