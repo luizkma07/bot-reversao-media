@@ -21,6 +21,7 @@ from agentes.parsers.trade_entry_evaluator_parser import TradeEntryEvaluatorPars
 from managers.data_manager import prepare_multi_timeframe_technical_data, prepare_market_data
 from utils.utilidades import calcular_risco_retorno_compra, calcular_risco_retorno_venda
 from utils.logging import get_logger, LogCategory
+from utils.orchestrator_client import FleetOrchestrator
 
 # Nome do módulo para logs (automático)
 MODULE_NAME = Path(__file__).stem
@@ -123,22 +124,7 @@ def mercado_tem_volatilidade_suficiente(df, periodo=14, multiplicador=0.6, logge
         return True
 
 
-def tendencia_diaria_confirma_compra(df_1d, logger=None, symbol='', module=''):
-    """
-    [PROJETO VANGUARDA] MUTAÇÃO MESTRA: Filtro Macro D1 Desativado.
-    O Vanguarda cruza lógicas agressivas no 15 Minutos.
-    Retorna sempre True.
-    """
-    return True
 
-
-def tendencia_diaria_confirma_venda(df_1d, logger=None, symbol='', module=''):
-    """
-    [PROJETO VANGUARDA] MUTAÇÃO MESTRA: Filtro Macro D1 Desativado.
-    O Vanguarda cruza lógicas agressivas no 15 Minutos.
-    Retorna sempre True.
-    """
-    return True
 
 
 def start_live_trading_bot(
@@ -231,6 +217,8 @@ def start_live_trading_bot(
         # logger.info(LogCategory.TRADE_SEARCH, "🔍 Procurando oportunidades de trade", MODULE_NAME,
         #     subconta=subconta, symbol=cripto, tempo_grafico=tempo_grafico, lado_operacao=lado_operacao.value)
 
+    orchestrator = FleetOrchestrator(logger=logger)
+
     while True:
         # Verificar sinal de parada
         if stop_flag and stop_flag.is_set():
@@ -238,6 +226,31 @@ def start_live_trading_bot(
                 "🛑 Bot recebeu sinal de parada da API", MODULE_NAME,
                 symbol=cripto, bot_id=bot_id)
             break
+
+        # --- INTEGRAÇÃO ORQUESTRADOR ---
+        bot_state = orchestrator.get_bot_state('mean_reversion')
+        risco_efetivo_valor = risco_por_operacao.value
+        allowed_side = "BOTH"
+        risk_multiplier = 1.0
+        
+        if bot_state:
+            if bot_state.get('status') == 'PAUSED':
+                logger.info(LogCategory.TRADE_SEARCH, "Ordem do Orquestrador: Bot Pausado. Aguardando...", MODULE_NAME, symbol=cripto)
+                time.sleep(30)
+                continue
+            
+            # Atualiza ativo dinamicamente
+            if 'ativo' in bot_state:
+                cripto = bot_state['ativo']
+                
+            if 'allowed_side' in bot_state:
+                allowed_side = bot_state['allowed_side']
+            if 'risk_multiplier' in bot_state:
+                risk_multiplier = float(bot_state['risk_multiplier'])
+                
+            # Atualiza risco dinamicamente
+            risco_efetivo_valor = risco_por_operacao.value * risk_multiplier
+        # -------------------------------
 
         if time.time() < bloqueio_ate:
             restante_segundos = int(bloqueio_ate - time.time())
@@ -363,7 +376,7 @@ def start_live_trading_bot(
                         #     subconta=subconta, symbol=cripto, tempo_grafico=tempo_grafico, lado_operacao=lado_operacao.value)
 
                 elif estado_de_trade == EstadoDeTrade.DE_FORA and df.index[-1] != vela_fechou_trade:
-                    if compras_habilitadas:
+                    if compras_habilitadas and allowed_side in ["LONG", "BOTH"] and risk_multiplier > 0.0:
                         vela_referencia_condition = df['fechamento'].iloc[-2] > df['ema_rapida_compra'].iloc[-2] and df['fechamento'].iloc[-2] > df['ema_lenta_compra'].iloc[-2]
                         breakout_condition = df['maxima'].iloc[-1] > df['maxima'].iloc[-2]
 
@@ -380,36 +393,29 @@ def start_live_trading_bot(
                                     if df.index[-1] != vela_executou_trade_entry_evaluator:
                                         # ═══════════════════════════════════════════════════════
                                         # [FIX] UMA ÚNICA CHAMADA — resultado reutilizado para:
-                                        #   1. Filtro D1 (verificação de tendência)
-                                        #   2. Alimentar o agente Entry Evaluator
+                                        #   1. Alimentar o agente Entry Evaluator
                                         # Antes havia 2 chamadas à API (bug de RateLimit).
                                         # ═══════════════════════════════════════════════════════
                                         df_1w, df_1d, df = prepare_multi_timeframe_technical_data(df, cripto)
 
-                                        # [MELHORIA #1] FILTRO D1 — usa df_1d já obtido acima
-                                        if not tendencia_diaria_confirma_compra(df_1d, logger, cripto, MODULE_NAME):
-                                            logger.info(LogCategory.TRADE_SEARCH,
-                                                "🚫 Compra bloqueada — Tendência do D1 não confirma alta. Aguardando alinhamento.",
-                                                MODULE_NAME, symbol=cripto)
-                                        else:
-                                            logger.agent(LogCategory.AGENT_EXECUTION, "🤖 Iniciando análise de compra", MODULE_NAME,
-                                                agent_name="Entry Evaluator", symbol=cripto, tempo_grafico=tempo_grafico, lado_operacao="compra")
-                                            vela_executou_trade_entry_evaluator = df.index[-1]
+                                        logger.agent(LogCategory.AGENT_EXECUTION, "🤖 Iniciando análise de compra", MODULE_NAME,
+                                            agent_name="Entry Evaluator", symbol=cripto, tempo_grafico=tempo_grafico, lado_operacao="compra")
+                                        vela_executou_trade_entry_evaluator = df.index[-1]
 
-                                            saldo = saldo_da_conta(subconta)
-                                            # df_1w, df_1d, df ja obtidos acima - sem chamada dupla!
-                                            # [FIX TF] TF operacional agora e 1H, entao subimos o auxiliar para 4H
-                                            df_4h = busca_velas(cripto, '240', [9, 21])
-                                            df_4h = prepare_market_data(df_4h, use_emas=True, emas_periods=[200], use_peaks=True, peaks_distance=21)
-                                            resposta = trade_entry_evaluator.run(prompt_trade_entry_evaluator(
-                                                saldo, tempo_grafico, ema_rapida_compra, ema_lenta_compra, cripto,
-                                                qtd_min_para_operar, subconta, 'compra', df, df_1w, df_1d, df_4h
-                                            ))
+                                        saldo = saldo_da_conta(subconta)
+                                        # df_1w, df_1d, df ja obtidos acima - sem chamada dupla!
+                                        # [FIX TF] TF operacional agora e 1H, entao subimos o auxiliar para 4H
+                                        df_4h = busca_velas(cripto, '240', [9, 21])
+                                        df_4h = prepare_market_data(df_4h, use_emas=True, emas_periods=[200], use_peaks=True, peaks_distance=21)
+                                        resposta = trade_entry_evaluator.run(prompt_trade_entry_evaluator(
+                                            saldo, tempo_grafico, ema_rapida_compra, ema_lenta_compra, cripto,
+                                            qtd_min_para_operar, subconta, 'compra', df, df_1w, df_1d, df_4h
+                                        ))
 
-                                            logger.agent(LogCategory.AGENT_RESPONSE, "Resposta do Entry Evaluator recebida", MODULE_NAME,
-                                                agent_name="Entry Evaluator", symbol=cripto, response_length=len(resposta.content), response_content=resposta.content)
+                                        logger.agent(LogCategory.AGENT_RESPONSE, "Resposta do Entry Evaluator recebida", MODULE_NAME,
+                                            agent_name="Entry Evaluator", symbol=cripto, response_length=len(resposta.content), response_content=resposta.content)
 
-                                            abriu_trade = TradeEntryEvaluatorParser.processar_resposta(resposta, cripto, subconta, tempo_grafico, risco_por_operacao.value, logger)
+                                        abriu_trade = TradeEntryEvaluatorParser.processar_resposta(resposta, cripto, subconta, tempo_grafico, risco_efetivo_valor, logger)
 
                                             if abriu_trade:
                                                 vela_abertura_trade = df.index[-1]
@@ -422,7 +428,7 @@ def start_live_trading_bot(
                                                 # logger.info(LogCategory.TRADE_SEARCH, "🔍 Procurando oportunidades de trade", MODULE_NAME,
                                                 #     subconta=subconta, symbol=cripto, tempo_grafico=tempo_grafico, lado_operacao=lado_operacao.value)
 
-                    if vendas_habilitadas:
+                    if vendas_habilitadas and allowed_side in ["SHORT", "BOTH"] and risk_multiplier > 0.0:
                         vela_venda_condition = df['fechamento'].iloc[-2] < df['ema_rapida_venda'].iloc[-2] and df['fechamento'].iloc[-2] < df['ema_lenta_venda'].iloc[-2]
                         breakout_condition = df['minima'].iloc[-1] < df['minima'].iloc[-2]
 
@@ -438,36 +444,29 @@ def start_live_trading_bot(
                                     if df.index[-1] != vela_executou_trade_entry_evaluator:
                                         # ═══════════════════════════════════════════════════════
                                         # [FIX] UMA ÚNICA CHAMADA — resultado reutilizado para:
-                                        #   1. Filtro D1 (verificação de tendência)
-                                        #   2. Alimentar o agente Entry Evaluator
+                                        #   1. Alimentar o agente Entry Evaluator
                                         # Antes havia 2 chamadas à API (bug de RateLimit).
                                         # ═══════════════════════════════════════════════════════
                                         df_1w, df_1d, df = prepare_multi_timeframe_technical_data(df, cripto)
 
-                                        # [MELHORIA #1] FILTRO D1 — usa df_1d já obtido acima
-                                        if not tendencia_diaria_confirma_venda(df_1d, logger, cripto, MODULE_NAME):
-                                            logger.info(LogCategory.TRADE_SEARCH,
-                                                "🚫 Venda bloqueada — Tendência do D1 não confirma baixa. Aguardando alinhamento.",
-                                                MODULE_NAME, symbol=cripto)
-                                        else:
-                                            logger.agent(LogCategory.AGENT_EXECUTION, "🤖 Iniciando análise de venda", MODULE_NAME,
-                                                agent_name="Entry Evaluator", symbol=cripto, tempo_grafico=tempo_grafico, lado_operacao="venda")
-                                            vela_executou_trade_entry_evaluator = df.index[-1]
+                                        logger.agent(LogCategory.AGENT_EXECUTION, "🤖 Iniciando análise de venda", MODULE_NAME,
+                                            agent_name="Entry Evaluator", symbol=cripto, tempo_grafico=tempo_grafico, lado_operacao="venda")
+                                        vela_executou_trade_entry_evaluator = df.index[-1]
 
-                                            saldo = saldo_da_conta(subconta)
-                                            # df_1w, df_1d, df ja obtidos acima - sem chamada dupla!
-                                            # [FIX TF] TF operacional agora e 1H, entao subimos o auxiliar para 4H
-                                            df_4h = busca_velas(cripto, '240', [9, 21])
-                                            df_4h = prepare_market_data(df_4h, use_emas=True, emas_periods=[200], use_peaks=True, peaks_distance=21)
-                                            resposta = trade_entry_evaluator.run(prompt_trade_entry_evaluator(
-                                                saldo, tempo_grafico, ema_rapida_venda, ema_lenta_venda, cripto,
-                                                qtd_min_para_operar, subconta, 'venda', df, df_1w, df_1d, df_4h
-                                            ))
+                                        saldo = saldo_da_conta(subconta)
+                                        # df_1w, df_1d, df ja obtidos acima - sem chamada dupla!
+                                        # [FIX TF] TF operacional agora e 1H, entao subimos o auxiliar para 4H
+                                        df_4h = busca_velas(cripto, '240', [9, 21])
+                                        df_4h = prepare_market_data(df_4h, use_emas=True, emas_periods=[200], use_peaks=True, peaks_distance=21)
+                                        resposta = trade_entry_evaluator.run(prompt_trade_entry_evaluator(
+                                            saldo, tempo_grafico, ema_rapida_venda, ema_lenta_venda, cripto,
+                                            qtd_min_para_operar, subconta, 'venda', df, df_1w, df_1d, df_4h
+                                        ))
 
-                                            logger.agent(LogCategory.AGENT_RESPONSE, "Resposta do Entry Evaluator recebida", MODULE_NAME,
-                                                agent_name="Entry Evaluator", symbol=cripto, response_length=len(resposta.content), response_content=resposta.content)
+                                        logger.agent(LogCategory.AGENT_RESPONSE, "Resposta do Entry Evaluator recebida", MODULE_NAME,
+                                            agent_name="Entry Evaluator", symbol=cripto, response_length=len(resposta.content), response_content=resposta.content)
 
-                                            abriu_trade = TradeEntryEvaluatorParser.processar_resposta(resposta, cripto, subconta, tempo_grafico, risco_por_operacao.value, logger)
+                                        abriu_trade = TradeEntryEvaluatorParser.processar_resposta(resposta, cripto, subconta, tempo_grafico, risco_efetivo_valor, logger)
 
                                             if abriu_trade:
                                                 vela_abertura_trade = df.index[-1]
