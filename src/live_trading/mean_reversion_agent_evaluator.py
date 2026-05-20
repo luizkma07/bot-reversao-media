@@ -56,15 +56,17 @@ bb_desvio_padrao = 2.0
 adx_periodo = 14
 adx_limite_maximo = 30
 di_limite_dominancia = 30
+atr_periodo = 14
+atr_filtro_multiplicador = 0.8
 volume_media_periodo = 20
 volume_multiplicador_max = 2.5
 MAX_STOPS_CONSECUTIVOS = 3
 PAUSA_CIRCUIT_BREAKER_HORAS = 2
 
 
-def salvar_estado_cb(stops_consecutivos, bloqueio_ate, logger=None):
+def salvar_estado_cb(stops_consecutivos, bloqueio_ate, last_loss_time=0.0, logger=None):
     try:
-        estado = {"stops_consecutivos": stops_consecutivos, "bloqueio_ate": bloqueio_ate, "atualizado_em": datetime.now().isoformat()}
+        estado = {"stops_consecutivos": stops_consecutivos, "bloqueio_ate": bloqueio_ate, "last_loss_time": last_loss_time, "atualizado_em": datetime.now().isoformat()}
         CB_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(CB_STATE_FILE, "w") as f:
             json.dump(estado, f, indent=2)
@@ -78,10 +80,10 @@ def carregar_estado_cb():
         if CB_STATE_FILE.exists():
             with open(CB_STATE_FILE, "r") as f:
                 estado = json.load(f)
-            return int(estado.get("stops_consecutivos", 0)), float(estado.get("bloqueio_ate", 0))
+            return int(estado.get("stops_consecutivos", 0)), float(estado.get("bloqueio_ate", 0)), float(estado.get("last_loss_time", 0.0))
     except Exception:
         pass
-    return 0, 0.0
+    return 0, 0.0, 0.0
 
 
 def calcular_rsi(df, periodo=14):
@@ -118,6 +120,30 @@ def calcular_adx(df, periodo=14):
     dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di + 1e-10)
     adx = dx.ewm(alpha=1 / periodo, adjust=False).mean()
     return adx, plus_di, minus_di
+
+
+def calcular_atr(df, periodo=14):
+    high = df['maxima']
+    low = df['minima']
+    close_prev = df['fechamento'].shift(1)
+    tr = (high - low).combine((high - close_prev).abs(), max).combine((low - close_prev).abs(), max)
+    atr = tr.ewm(span=periodo, adjust=False).mean()
+    return atr.iloc[-1], atr.mean()
+
+
+def mercado_tem_volatilidade_suficiente(df, periodo=14, multiplicador=0.8, last_loss_time=0.0, logger=None, symbol='', module=''):
+    try:
+        atr_atual, atr_medio = calcular_atr(df, periodo)
+        horas_desde_loss = (time.time() - last_loss_time) / 3600
+        multiplicador_efetivo = multiplicador
+        if horas_desde_loss < 4.0:
+            multiplicador_efetivo = multiplicador + 0.4
+            
+        limite_minimo = multiplicador_efetivo * atr_medio
+        volatilidade_ok = atr_atual >= limite_minimo
+        return volatilidade_ok
+    except Exception:
+        return True
 
 
 def volume_nao_e_anomalia(df, periodo=20, multiplicador_max=2.0, logger=None, symbol='', module=''):
@@ -199,7 +225,7 @@ def start_live_trading_bot(
                 exit()
 
     # FIX #3: carrega estado do CB do disco ao iniciar
-    stops_consecutivos, bloqueio_ate = carregar_estado_cb()
+    stops_consecutivos, bloqueio_ate, last_loss_time = carregar_estado_cb()
     if bloqueio_ate > time.time():
         logger.warning(LogCategory.TRADE_SEARCH, "Circuit Breaker ativo restaurado do disco.", MODULE_NAME, symbol=cripto)
 
@@ -211,6 +237,8 @@ def start_live_trading_bot(
     if estado_de_trade in [EstadoDeTrade.COMPRADO, EstadoDeTrade.VENDIDO]:
         if not executar_agente_no_start:
             ultima_execucao_trade_conductor = datetime.now()
+            
+    orchestrator = FleetOrchestrator(logger=logger)
 
     orchestrator = FleetOrchestrator(logger=logger)
 
@@ -218,6 +246,29 @@ def start_live_trading_bot(
         if stop_flag and stop_flag.is_set():
             logger.info(LogCategory.BOT_STOP, "Bot recebeu sinal de parada", MODULE_NAME, symbol=cripto, bot_id=bot_id)
             break
+            
+        bot_state = orchestrator.get_bot_state('mean_reversion')
+        risco_efetivo_valor = risco_por_operacao.value
+        allowed_side = "BOTH"
+        risk_multiplier = 1.0
+        atr_filtro_multiplicador_dinamico = atr_filtro_multiplicador
+        
+        if bot_state:
+            if bot_state.get('status') == 'PAUSED':
+                logger.info(LogCategory.TRADE_SEARCH, "Ordem do Orquestrador: Bot Pausado. Aguardando...", MODULE_NAME, symbol=cripto)
+                time.sleep(30)
+                continue
+                
+            if 'ativo' in bot_state:
+                cripto = bot_state['ativo']
+            if 'allowed_side' in bot_state:
+                allowed_side = bot_state['allowed_side']
+            if 'risk_multiplier' in bot_state:
+                risk_multiplier = float(bot_state['risk_multiplier'])
+            if 'base_atr_multiplier' in bot_state:
+                atr_filtro_multiplicador_dinamico = float(bot_state['base_atr_multiplier'])
+                
+        risco_efetivo_valor = risco_por_operacao.value * risk_multiplier
 
         # --- INTEGRAÇÃO ORQUESTRADOR ---
         bot_state = orchestrator.get_bot_state('mean_reversion')
@@ -271,7 +322,7 @@ def start_live_trading_bot(
                             estado_de_trade = EstadoDeTrade.DE_FORA
                             vela_fechou_trade = df.index[-1]
                             stops_consecutivos = 0
-                            salvar_estado_cb(stops_consecutivos, bloqueio_ate, logger)
+                            salvar_estado_cb(stops_consecutivos, bloqueio_ate, last_loss_time, logger)
                             
                             pnl_pct = ((p_alvo_antigo - p_entrada_antigo) / p_entrada_antigo) * 100 if p_entrada_antigo > 0 else 0
                             logger.info(LogCategory.POSITION_STATUS, f"💰 [BOT REVERSÃO] Relatório de PnL | Entrada: {p_entrada_antigo:.2f} | Saída: {p_alvo_antigo:.2f} | Status: Take Profit | PnL: +{pnl_pct:.2f}%", MODULE_NAME, symbol=cripto)
@@ -280,7 +331,8 @@ def start_live_trading_bot(
                             estado_de_trade = EstadoDeTrade.DE_FORA
                             vela_fechou_trade = df.index[-1]
                             stops_consecutivos += 1
-                            salvar_estado_cb(stops_consecutivos, bloqueio_ate, logger)
+                            last_loss_time = time.time()
+                            salvar_estado_cb(stops_consecutivos, bloqueio_ate, last_loss_time, logger)
                             
                             pnl_pct = ((p_stop_antigo - p_entrada_antigo) / p_entrada_antigo) * 100 if p_entrada_antigo > 0 else 0
                             logger.info(LogCategory.POSITION_STATUS, f"🛑 [BOT REVERSÃO] Relatório de PnL | Entrada: {p_entrada_antigo:.2f} | Saída: {p_stop_antigo:.2f} | Status: Stop Loss | PnL: {pnl_pct:.2f}%", MODULE_NAME, symbol=cripto)
@@ -288,7 +340,7 @@ def start_live_trading_bot(
                             if stops_consecutivos >= MAX_STOPS_CONSECUTIVOS:
                                 bloqueio_ate = time.time() + (PAUSA_CIRCUIT_BREAKER_HORAS * 3600)
                                 stops_consecutivos = 0
-                                salvar_estado_cb(stops_consecutivos, bloqueio_ate, logger)
+                                salvar_estado_cb(stops_consecutivos, bloqueio_ate, last_loss_time, logger)
                                 logger.critical(LogCategory.FATAL_ERROR, "Circuit Breaker ativado e salvo em disco.", MODULE_NAME, symbol=cripto)
                         else:
                             vela_fechou_trade = df.index[-1]
@@ -313,7 +365,7 @@ def start_live_trading_bot(
                             estado_de_trade = EstadoDeTrade.DE_FORA
                             vela_fechou_trade = df.index[-1]
                             stops_consecutivos = 0
-                            salvar_estado_cb(stops_consecutivos, bloqueio_ate, logger)
+                            salvar_estado_cb(stops_consecutivos, bloqueio_ate, last_loss_time, logger)
                             
                             pnl_pct = ((p_entrada_antigo - p_alvo_antigo) / p_entrada_antigo) * 100 if p_entrada_antigo > 0 else 0
                             logger.info(LogCategory.POSITION_STATUS, f"💰 [BOT REVERSÃO] Relatório de PnL | Entrada: {p_entrada_antigo:.2f} | Saída: {p_alvo_antigo:.2f} | Status: Take Profit | PnL: +{pnl_pct:.2f}%", MODULE_NAME, symbol=cripto)
@@ -322,7 +374,8 @@ def start_live_trading_bot(
                             estado_de_trade = EstadoDeTrade.DE_FORA
                             vela_fechou_trade = df.index[-1]
                             stops_consecutivos += 1
-                            salvar_estado_cb(stops_consecutivos, bloqueio_ate, logger)
+                            last_loss_time = time.time()
+                            salvar_estado_cb(stops_consecutivos, bloqueio_ate, last_loss_time, logger)
                             
                             pnl_pct = ((p_entrada_antigo - p_stop_antigo) / p_entrada_antigo) * 100 if p_entrada_antigo > 0 else 0
                             logger.info(LogCategory.POSITION_STATUS, f"🛑 [BOT REVERSÃO] Relatório de PnL | Entrada: {p_entrada_antigo:.2f} | Saída: {p_stop_antigo:.2f} | Status: Stop Loss | PnL: {pnl_pct:.2f}%", MODULE_NAME, symbol=cripto)
@@ -330,7 +383,7 @@ def start_live_trading_bot(
                             if stops_consecutivos >= MAX_STOPS_CONSECUTIVOS:
                                 bloqueio_ate = time.time() + (PAUSA_CIRCUIT_BREAKER_HORAS * 3600)
                                 stops_consecutivos = 0
-                                salvar_estado_cb(stops_consecutivos, bloqueio_ate, logger)
+                                salvar_estado_cb(stops_consecutivos, bloqueio_ate, last_loss_time, logger)
                                 logger.critical(LogCategory.FATAL_ERROR, "Circuit Breaker ativado e salvo em disco.", MODULE_NAME, symbol=cripto)
                         else:
                             vela_fechou_trade = df.index[-1]
@@ -356,8 +409,14 @@ def start_live_trading_bot(
                         sinal_compra = cond_bb_compra and cond_rsi_compra and cond_retorno_compra
 
                         if sinal_compra:
-                            if not mercado_ok_para_entrada(df, 'compra', adx, plus_di, minus_di,
+                            if allowed_side not in ["LONG", "BOTH"]:
+                                pass
+                            elif risk_multiplier == 0.0:
+                                pass
+                            elif not mercado_ok_para_entrada(df, 'compra', adx, plus_di, minus_di,
                                                            adx_limite_maximo, di_limite_dominancia, logger, cripto, MODULE_NAME):
+                                pass
+                            elif not mercado_tem_volatilidade_suficiente(df, atr_periodo, atr_filtro_multiplicador_dinamico, last_loss_time, logger, cripto, MODULE_NAME):
                                 pass
                             elif not volume_nao_e_anomalia(df, volume_media_periodo, volume_multiplicador_max, logger, cripto, MODULE_NAME):
                                 pass
@@ -430,8 +489,14 @@ def start_live_trading_bot(
                         sinal_venda = cond_bb_venda and cond_rsi_venda and cond_retorno_venda
 
                         if sinal_venda:
-                            if not mercado_ok_para_entrada(df, 'venda', adx, plus_di, minus_di,
+                            if allowed_side not in ["SHORT", "BOTH"]:
+                                pass
+                            elif risk_multiplier == 0.0:
+                                pass
+                            elif not mercado_ok_para_entrada(df, 'venda', adx, plus_di, minus_di,
                                                            adx_limite_maximo, di_limite_dominancia, logger, cripto, MODULE_NAME):
+                                pass
+                            elif not mercado_tem_volatilidade_suficiente(df, atr_periodo, atr_filtro_multiplicador_dinamico, last_loss_time, logger, cripto, MODULE_NAME):
                                 pass
                             elif not volume_nao_e_anomalia(df, volume_media_periodo, volume_multiplicador_max, logger, cripto, MODULE_NAME):
                                 pass
