@@ -5,8 +5,8 @@ import urllib.error
 
 class FleetOrchestrator:
     def __init__(self, logger=None):
-        self.url = os.environ.get("UPSTASH_REDIS_REST_URL", "https://credible-airedale-125727.upstash.io")
-        self.token = os.environ.get("UPSTASH_REDIS_REST_TOKEN", "gQAAAAAAAesfAAIgcDFhNzlkZmQ5OTQ5YWQ0YmMyYjYxMzgzMjAwOTI2Y2IwMw")
+        self.url   = os.environ.get("UPSTASH_REDIS_REST_URL", "")
+        self.token = os.environ.get("UPSTASH_REDIS_REST_TOKEN", "")
         self.logger = logger
         self.last_known_state = None
 

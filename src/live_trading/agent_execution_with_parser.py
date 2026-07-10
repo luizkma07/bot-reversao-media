@@ -194,21 +194,12 @@ def executar_trade_conductor_se_necessario(
                                     agent_name="Trade Conductor", symbol=cripto, current_trailing_stop=trailing_stop, action="trailing_stop_ja_existe", decision="NO_ACTION")
 
                         if acao.get('acao') == 'realizar_parcial':
-                            percentual = acao.get('percentual')
-                            quantidade_cripto_parcial = quantidade_cripto_para_parcial(tamanho_posicao, percentual, qtd_min_para_operar)
-                            if estado_de_trade == EstadoDeTrade.COMPRADO:
-                                detalhes = f"Percentual: {percentual}%" if percentual else ""
-                                logger.agent(LogCategory.AGENT_ACTION, "Realizando fechamento parcial de posição LONG", MODULE_NAME,
-                                    agent_name="Trade Conductor", symbol=cripto, side="SELL", percentage=percentual, partial_quantity=quantidade_cripto_parcial,
-                                    total_position=tamanho_posicao, action="realizar_parcial", confidence=confianca, details=detalhes)
-                                # fecha_parcial_compra(cripto, quantidade_cripto_parcial, subconta)
-                            elif estado_de_trade == EstadoDeTrade.VENDIDO:
-                                detalhes = f"Percentual: {percentual}%" if percentual else ""
-                                logger.agent(LogCategory.AGENT_ACTION, "Realizando fechamento parcial de posição SHORT", MODULE_NAME,
-                                    agent_name="Trade Conductor", symbol=cripto, side="BUY", percentage=percentual, partial_quantity=quantidade_cripto_parcial,
-                                    total_position=tamanho_posicao, action="realizar_parcial", confidence=confianca, details=detalhes)
-                                # fecha_parcial_venda(cripto, quantidade_cripto_parcial, subconta)
-                                
+                            # Funcionalidade não implementada na exchange.
+                            # O LLM pode sugerir mas a ação não é executada para evitar
+                            # fechamentos parciais inconsistentes com o SL/TP da Bybit.
+                            logger.agent(LogCategory.AGENT_DECISION, "Acao 'realizar_parcial' solicitada pelo LLM mas nao suportada nesta versao.", MODULE_NAME,
+                                agent_name="Trade Conductor", symbol=cripto, action="realizar_parcial", decision="NO_ACTION")
+
                     except ConnectionError as ce:
                         logger.error(LogCategory.CONNECTION_ERROR, f"Erro de conexão ao executar ação do agente", MODULE_NAME,
                             symbol=cripto, action=acao.get("acao", ""), error_message=str(ce), exception=ce)

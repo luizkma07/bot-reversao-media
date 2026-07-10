@@ -41,7 +41,7 @@ MODULE_NAME = Path(__file__).stem
 CB_STATE_FILE = Path(__file__).parent.parent.parent / "circuit_breaker_state.json"
 
 subconta = 1
-cripto = 'ETHUSDT'
+cripto = 'XRPUSDT'
 tempo_grafico = '30'
 frequencia_agente_horas = 4
 executar_agente_no_start = False
@@ -49,8 +49,8 @@ lado_operacao = LadoOperacao.AMBOS
 risco_por_operacao = RiscoOperacao.MEDIO_BAIXO
 
 rsi_periodo = 14
-rsi_sobrevenda = 38
-rsi_sobrecompra = 62
+rsi_sobrevenda = 35
+rsi_sobrecompra = 65
 bb_periodo = 20
 bb_desvio_padrao = 2.0
 adx_periodo = 14
@@ -193,7 +193,7 @@ def start_live_trading_bot(
     logger = get_logger(bot_id)
 
     logger.info(LogCategory.BOT_START,
-        "Bot MR BARBELL v3 iniciado — ETH/30min / Perfil Agressivo Complementar",
+        "Bot MR BARBELL v3 iniciado — XRP/30min / Perfil Agressivo Complementar",
         MODULE_NAME,
         subconta=subconta, symbol=cripto, tempo_grafico=tempo_grafico,
         perfil="barbell_agressivo_v3",
@@ -230,7 +230,7 @@ def start_live_trading_bot(
         logger.warning(LogCategory.TRADE_SEARCH, "Circuit Breaker ativo restaurado do disco.", MODULE_NAME, symbol=cripto)
 
     vela_abertura_trade = None
-    vela_fechou_trade = None
+    vela_fechou_trade = None  # será inicializado com a última vela no 1º ciclo
     vela_executou_trade_entry_evaluator = None
     ultima_execucao_trade_conductor = None
 
@@ -240,25 +240,24 @@ def start_live_trading_bot(
             
     orchestrator = FleetOrchestrator(logger=logger)
 
-    orchestrator = FleetOrchestrator(logger=logger)
-
     while True:
         if stop_flag and stop_flag.is_set():
             logger.info(LogCategory.BOT_STOP, "Bot recebeu sinal de parada", MODULE_NAME, symbol=cripto, bot_id=bot_id)
             break
             
+        # ── LEITURA DO ORQUESTRADOR (Alpha Strategist via Redis) ──────────────
         bot_state = orchestrator.get_bot_state('mean_reversion')
         risco_efetivo_valor = risco_por_operacao.value
         allowed_side = "BOTH"
         risk_multiplier = 1.0
         atr_filtro_multiplicador_dinamico = atr_filtro_multiplicador
-        
+
         if bot_state:
             if bot_state.get('status') == 'PAUSED':
                 logger.info(LogCategory.TRADE_SEARCH, "Ordem do Orquestrador: Bot Pausado. Aguardando...", MODULE_NAME, symbol=cripto)
                 time.sleep(30)
                 continue
-                
+
             if 'ativo' in bot_state:
                 cripto = bot_state['ativo']
             if 'allowed_side' in bot_state:
@@ -267,27 +266,11 @@ def start_live_trading_bot(
                 risk_multiplier = float(bot_state['risk_multiplier'])
             if 'base_atr_multiplier' in bot_state:
                 atr_filtro_multiplicador_dinamico = float(bot_state['base_atr_multiplier'])
-                
-        risco_efetivo_valor = risco_por_operacao.value * risk_multiplier
-
-        # --- INTEGRAÇÃO ORQUESTRADOR ---
-        bot_state = orchestrator.get_bot_state('mean_reversion')
-        risco_efetivo_valor = risco_por_operacao.value
-        
-        if bot_state:
-            if bot_state.get('status') == 'PAUSED':
-                logger.info(LogCategory.TRADE_SEARCH, "Ordem do Orquestrador: Bot Pausado. Aguardando...", MODULE_NAME, symbol=cripto)
-                time.sleep(30)
-                continue
-            
-            # Atualiza ativo dinamicamente
-            if 'ativo' in bot_state:
-                cripto = bot_state['ativo']
-                
-            # Atualiza risco dinamicamente
             if 'risco_efetivo' in bot_state:
                 risco_efetivo_valor = float(bot_state['risco_efetivo']) / 100.0
-        # -------------------------------
+            else:
+                risco_efetivo_valor = risco_por_operacao.value * risk_multiplier
+        # ─────────────────────────────────────────────────────────────────────
 
         if time.time() < bloqueio_ate:
             restante = int(bloqueio_ate - time.time())
