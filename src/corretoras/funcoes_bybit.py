@@ -56,7 +56,7 @@ def carregar_dados_historicos(cripto, tempo_grafico, emas, start, end, pular_vel
         velas_sem_estrutura = []
 
         while start_timestamp < end_timestamp:
-            resposta = busca_cliente(1).get_kline(symbol=cripto, interval=tempo_grafico, limit=1000, start=start_timestamp)
+            resposta = busca_cliente(1).get_kline(symbol=cripto, interval=tempo_grafico, limit=200, start=start_timestamp)
             velas_sem_estrutura += resposta['result']['list'][::-1]
             start_timestamp = int(velas_sem_estrutura[-1][0]) + 1000
 
@@ -91,7 +91,7 @@ def carregar_dados_historicos(cripto, tempo_grafico, emas, start, end, pular_vel
 
 def busca_velas(cripto, tempo_grafico, emas, nro_subconta=1):
     # Busca as velas sem estrutura da corretora e inverte a lista
-    resposta = busca_cliente(nro_subconta).get_kline(symbol=cripto, interval=tempo_grafico, limit=1000)
+    resposta = busca_cliente(nro_subconta).get_kline(symbol=cripto, interval=tempo_grafico, limit=200)
     velas_sem_estrutura = resposta['result']['list'][::-1]
     
     # Cria um DataFrame com as velas

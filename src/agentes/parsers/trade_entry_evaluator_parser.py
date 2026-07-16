@@ -115,6 +115,29 @@ class TradeEntryEvaluatorParser(BaseParser):
         
         return data
 
+
+
+    @staticmethod
+    def _registrar_avaliacao(cripto, justificativa, acao_tomada, confianca, nome_bot):
+        caminho_arquivo = "C:/Users/user/Documents/Geral_agentes_antigravitty/01_Ecossistema_Quant_Cripto/Quantitative_optimizer/logs_avaliacoes.jsonl"
+        try:
+            from datetime import datetime
+            import json
+            import os
+            agora = datetime.now()
+            nova_avaliacao = {
+                'data': agora.isoformat(),
+                'bot': nome_bot,
+                'cripto': cripto,
+                'acao_tomada': acao_tomada,
+                'confianca': confianca,
+                'justificativa': justificativa
+            }
+            with open(caminho_arquivo, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(nova_avaliacao, ensure_ascii=False) + '\n')
+        except Exception as e:
+            print(f"Erro ao registrar avaliação: {e}")
+
     def processar_resposta(resposta, cripto, subconta, tempo_grafico, risco_por_operacao, logger):
         confianca_aceitavel = 0.65
         risco_retorno_aceitavel = 1.5
@@ -130,9 +153,11 @@ class TradeEntryEvaluatorParser(BaseParser):
             # print('-' * 10)
             confianca = resposta_json.get('confianca', 0.0)
             acoes = resposta_json.get('acoes', [])
+            justificativa = resposta_json.get('justificativa', 'Sem justificativa')
             
             # verifica se a confiança é suficiente para executar o trade e se existe 'ação':'ignorar' na lista de ações
             if confianca < confianca_aceitavel:
+                TradeEntryEvaluatorParser._registrar_avaliacao(cripto, f"Confiança baixa ({confianca}). {justificativa}", "REJEITADO", confianca, "Reversão a Média")
                 if acoes and any(acao.get('acao') == 'ignorar' for acao in acoes):
                     logger.agent(LogCategory.AGENT_DECISION, "Trade ignorado conforme decisão do agente", "trade_entry_evaluator_parser",
                         agent_name="Entry Evaluator", symbol=cripto, action="ignorar", decision="NO_ACTION")
@@ -146,6 +171,7 @@ class TradeEntryEvaluatorParser(BaseParser):
             if acoes:
                 for acao in acoes:
                     if acao.get('acao') == 'ignorar':
+                        TradeEntryEvaluatorParser._registrar_avaliacao(cripto, f"Agente decidiu ignorar. {justificativa}", "REJEITADO", confianca, "Reversão a Média")
                         logger.agent(LogCategory.AGENT_DECISION, "Trade ignorado conforme decisão do agente", "trade_entry_evaluator_parser",
                             agent_name="Entry Evaluator", symbol=cripto, action="ignorar", decision="NO_ACTION")
                         return False
@@ -202,6 +228,8 @@ class TradeEntryEvaluatorParser(BaseParser):
                             symbol=cripto, entry_price=preco_atual, stop_price=preco_stop, target_price=preco_alvo,
                             position_size=float(quantidade_cripto_para_operar), risk_reward=risco_retorno, operation="compra")
 
+                        TradeEntryEvaluatorParser._registrar_avaliacao(cripto, f"Trade LONG Aberto! {justificativa}", "EXECUTADO", confianca, "Reversão a Média")
+
                         return True
 
                     if acao.get('acao') == 'vender':
@@ -255,5 +283,7 @@ class TradeEntryEvaluatorParser(BaseParser):
                         logger.trading(LogCategory.POSITION_OPEN, "Posição SHORT aberta pelo Entry Evaluator", "trade_entry_evaluator_parser",
                             symbol=cripto, entry_price=preco_atual, stop_price=preco_stop, target_price=preco_alvo,
                             position_size=float(quantidade_cripto_para_operar), risk_reward=risco_retorno, operation="venda")
+
+                        TradeEntryEvaluatorParser._registrar_avaliacao(cripto, f"Trade SHORT Aberto! {justificativa}", "EXECUTADO", confianca, "Reversão a Média")
 
                         return True
