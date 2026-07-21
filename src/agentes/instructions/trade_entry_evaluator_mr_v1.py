@@ -10,7 +10,7 @@ A estratégia opera em mercados LATERAIS (sem tendência), comprando extremos de
 
 1. AVALIAR O ESTIRAMENTO DO ELÁSTICO:
     - Quão distante o preço está da BB_MEDIA? (quanto maior, mais tensionado)
-    - O RSI confirma a exaustão? (RSI <= 35 para compra, >= 65 para venda)
+    - O RSI confirma a exaustão? (RSI <= 38 para compra, >= 62 para venda)
     - Há divergência de RSI? (preço faz nova mínima mas RSI não = exaustão vendedora)
     - O ADX está abaixo de 25? (confirma ausência de tendência = ambiente de range)
 

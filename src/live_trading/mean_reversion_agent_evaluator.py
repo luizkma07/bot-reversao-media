@@ -49,8 +49,8 @@ lado_operacao = LadoOperacao.AMBOS
 risco_por_operacao = RiscoOperacao.MEDIO_BAIXO
 
 rsi_periodo = 14
-rsi_sobrevenda = 35
-rsi_sobrecompra = 65
+rsi_sobrevenda = 38
+rsi_sobrecompra = 62
 bb_periodo = 20
 bb_desvio_padrao = 2.0
 adx_periodo = 14
