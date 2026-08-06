@@ -8,8 +8,8 @@ scripts = [
 processes = [subprocess.Popen(['python', script]) for script in scripts]
 
 try:
-    while True:
-        pass
+    for process in processes:
+        process.wait()
 
 except KeyboardInterrupt:
     print("Finalizando processos...")
