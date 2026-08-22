@@ -60,6 +60,48 @@ class FleetOrchestrator:
 
         return config_efetiva
 
+    def log_execution_quality(self, cripto, nome_bot, lado, preco_esperado, preco_real):
+        """
+        Registra a diferença entre o preço no momento da decisão (última vela
+        fechada usada para calcular stop/alvo/tamanho) e o preço real de
+        entrada da posição (lido via tem_trade_aberto logo após a ordem a
+        mercado ser confirmada). Best-effort — nunca lança exceção nem afeta
+        o fluxo de abertura de trade, que já está concluído quando isso roda.
+
+        Antes disso (auditoria de 2026-08), nenhum ponto do sistema media
+        slippage de execução — ordens são sempre a mercado (orderType=Market),
+        então o slippage é real e nunca foi quantificado.
+        """
+        if not self.url or not self.token:
+            return
+        try:
+            if not preco_esperado or not preco_real:
+                return
+            slippage_pct = ((preco_real - preco_esperado) / preco_esperado) * 100
+            if lado == "venda":
+                slippage_pct = -slippage_pct
+
+            registro = {
+                'data': datetime.now().isoformat(),
+                'bot': nome_bot,
+                'cripto': cripto,
+                'lado': lado,
+                'preco_esperado': preco_esperado,
+                'preco_real': preco_real,
+                'slippage_pct': round(slippage_pct, 4),
+            }
+            payload = json.dumps(registro, ensure_ascii=False)
+            endpoint = f"{self.url}/LPUSH/execution_quality_log"
+            req = urllib.request.Request(endpoint, data=payload.encode('utf-8'), method='POST')
+            req.add_header('Authorization', f'Bearer {self.token}')
+            urllib.request.urlopen(req, timeout=5)
+            # Mantém só os 500 registros mais recentes
+            trim_req = urllib.request.Request(f"{self.url}/LTRIM/execution_quality_log/0/499")
+            trim_req.add_header('Authorization', f'Bearer {self.token}')
+            urllib.request.urlopen(trim_req, timeout=5)
+        except Exception:
+            pass
+
     def send_heartbeat(self, bot_name):
         """
         Grava um sinal de vida no Redis (best-effort — nunca bloqueia nem lança

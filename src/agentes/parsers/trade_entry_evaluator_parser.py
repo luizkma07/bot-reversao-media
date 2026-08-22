@@ -5,7 +5,7 @@ from decimal import Decimal, ROUND_DOWN
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from corretoras.funcoes_bybit import busca_velas, saldo_da_conta, quantidade_minima_para_operar, abre_compra, abre_venda
+from corretoras.funcoes_bybit import busca_velas, saldo_da_conta, quantidade_minima_para_operar, abre_compra, abre_venda, tem_trade_aberto
 from utils.utilidades import calcular_risco_retorno_compra, calcular_risco_retorno_venda
 from utils.logging import LogCategory
 
@@ -230,6 +230,13 @@ class TradeEntryEvaluatorParser(BaseParser):
 
                         TradeEntryEvaluatorParser._registrar_avaliacao(cripto, f"Trade LONG Aberto! {justificativa}", "EXECUTADO", confianca, "Reversão a Média")
 
+                        try:
+                            from utils.orchestrator_client import FleetOrchestrator
+                            _, preco_real_entrada, _, _, _, _ = tem_trade_aberto(cripto, subconta)
+                            FleetOrchestrator(logger=logger).log_execution_quality(cripto, "mean_reversion", "compra", preco_atual, preco_real_entrada)
+                        except Exception:
+                            pass  # tracking de qualidade nunca deve afetar o resultado do trade
+
                         return True
 
                     if acao.get('acao') == 'vender':
@@ -285,5 +292,12 @@ class TradeEntryEvaluatorParser(BaseParser):
                             position_size=float(quantidade_cripto_para_operar), risk_reward=risco_retorno, operation="venda")
 
                         TradeEntryEvaluatorParser._registrar_avaliacao(cripto, f"Trade SHORT Aberto! {justificativa}", "EXECUTADO", confianca, "Reversão a Média")
+
+                        try:
+                            from utils.orchestrator_client import FleetOrchestrator
+                            _, preco_real_entrada, _, _, _, _ = tem_trade_aberto(cripto, subconta)
+                            FleetOrchestrator(logger=logger).log_execution_quality(cripto, "mean_reversion", "venda", preco_atual, preco_real_entrada)
+                        except Exception:
+                            pass  # tracking de qualidade nunca deve afetar o resultado do trade
 
                         return True
