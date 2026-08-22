@@ -246,6 +246,7 @@ def start_live_trading_bot(
             break
             
         # ── LEITURA DO ORQUESTRADOR (Alpha Strategist via Redis) ──────────────
+        orchestrator.send_heartbeat('mean_reversion')
         bot_state = orchestrator.get_bot_state('mean_reversion')
         risco_efetivo_valor = risco_por_operacao.value
         allowed_side = "BOTH"

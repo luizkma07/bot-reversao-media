@@ -2,6 +2,7 @@ import os
 import json
 import urllib.request
 import urllib.error
+from datetime import datetime
 
 class FleetOrchestrator:
     def __init__(self, logger=None):
@@ -56,5 +57,24 @@ class FleetOrchestrator:
             
         if "risco_short_percent" in config_efetiva:
             config_efetiva["risco_short_efetivo"] = config_efetiva["risco_short_percent"] * cro_multiplier
-            
+
         return config_efetiva
+
+    def send_heartbeat(self, bot_name):
+        """
+        Grava um sinal de vida no Redis (best-effort — nunca bloqueia nem lança
+        exceção, para nunca atrasar ou derrubar o loop principal do bot).
+        Usado pelo watchdog do Alpha Strategist (webhook_server.py) para
+        detectar bot travado/crashado sem ninguém perceber.
+        """
+        if not self.url or not self.token:
+            return
+        try:
+            payload = json.dumps({"ts": datetime.now().isoformat()})
+            endpoint = f"{self.url}/set/heartbeat:{bot_name}"
+            req = urllib.request.Request(endpoint, data=payload.encode('utf-8'), method='POST')
+            req.add_header('Authorization', f'Bearer {self.token}')
+            req.add_header('Content-Type', 'application/json')
+            urllib.request.urlopen(req, timeout=3)
+        except Exception:
+            pass
