@@ -540,6 +540,9 @@ def start_live_trading_bot(
                                         vela_abertura_trade = df_consolidado.index[-1]
                                         ultima_execucao_trade_conductor = datetime.now()
 
+                elif estado_de_trade == EstadoDeTrade.DE_FORA:
+                    logger.debug(LogCategory.TRADE_SEARCH, "🔍 Sem posição aberta. Procurando oportunidades de reversão.", MODULE_NAME, symbol=cripto)
+
         except Exception as e:
             erro_str = str(e).lower()
             if any(k in erro_str for k in ['ratelimit', 'rate limit', '429', 'too many requests', '10006', 'x-bapi-limit']):
