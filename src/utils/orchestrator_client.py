@@ -120,3 +120,36 @@ class FleetOrchestrator:
             urllib.request.urlopen(req, timeout=3)
         except Exception:
             pass
+
+    def log_trade_closed(self, bot_name, simbolo, motivo_fechamento, risco_efetivo_pct=None):
+        """
+        Registra o CONTEXTO de um fechamento de trade (best-effort — nunca
+        bloqueia nem lança exceção). O número de PnL em si vem sempre da
+        Bybit (fonte de verdade, via coletor_trades_fechados.py no repo do
+        Alpha Strategist); isto aqui só guarda o "porquê" — motivo do
+        fechamento e regime do Alpha no momento — para depois ser cruzado
+        com o registro real da corretora por bot+símbolo+janela de tempo.
+        """
+        if not self.url or not self.token:
+            return
+        try:
+            estado = self.last_known_state or {}
+            registro = {
+                'bot': bot_name,
+                'simbolo': simbolo,
+                'motivo_fechamento': motivo_fechamento,
+                'risco_efetivo_pct': risco_efetivo_pct,
+                'alpha_veredicto_momento': estado.get('alpha_veredicto', ''),
+                'cro_multiplier_momento': estado.get('cro_multiplier', ''),
+                'timestamp': datetime.now().isoformat(),
+            }
+            payload = json.dumps(registro, ensure_ascii=False)
+            endpoint = f"{self.url}/LPUSH/trade_history"
+            req = urllib.request.Request(endpoint, data=payload.encode('utf-8'), method='POST')
+            req.add_header('Authorization', f'Bearer {self.token}')
+            urllib.request.urlopen(req, timeout=5)
+            trim_req = urllib.request.Request(f"{self.url}/LTRIM/trade_history/0/1999")
+            trim_req.add_header('Authorization', f'Bearer {self.token}')
+            urllib.request.urlopen(trim_req, timeout=5)
+        except Exception:
+            pass

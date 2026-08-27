@@ -310,16 +310,18 @@ def start_live_trading_bot(
                             
                             pnl_pct = ((p_alvo_antigo - p_entrada_antigo) / p_entrada_antigo) * 100 if p_entrada_antigo > 0 else 0
                             logger.info(LogCategory.POSITION_STATUS, f"💰 [BOT REVERSÃO] Relatório de PnL | Entrada: {p_entrada_antigo:.2f} | Saída: {p_alvo_antigo:.2f} | Status: Take Profit | PnL: +{pnl_pct:.2f}%", MODULE_NAME, symbol=cripto)
-                            
+                            orchestrator.log_trade_closed('mean_reversion', cripto, 'take_profit', risco_efetivo_valor)
+
                         elif df['minima'].iloc[-1] <= p_stop_antigo and p_stop_antigo != 0:
                             estado_de_trade = EstadoDeTrade.DE_FORA
                             vela_fechou_trade = df.index[-1]
                             stops_consecutivos += 1
                             last_loss_time = time.time()
                             salvar_estado_cb(stops_consecutivos, bloqueio_ate, last_loss_time, logger)
-                            
+
                             pnl_pct = ((p_stop_antigo - p_entrada_antigo) / p_entrada_antigo) * 100 if p_entrada_antigo > 0 else 0
                             logger.info(LogCategory.POSITION_STATUS, f"🛑 [BOT REVERSÃO] Relatório de PnL | Entrada: {p_entrada_antigo:.2f} | Saída: {p_stop_antigo:.2f} | Status: Stop Loss | PnL: {pnl_pct:.2f}%", MODULE_NAME, symbol=cripto)
+                            orchestrator.log_trade_closed('mean_reversion', cripto, 'stop_loss', risco_efetivo_valor)
 
                             if stops_consecutivos >= MAX_STOPS_CONSECUTIVOS:
                                 bloqueio_ate = time.time() + (PAUSA_CIRCUIT_BREAKER_HORAS * 3600)
@@ -331,6 +333,7 @@ def start_live_trading_bot(
                             preco_saida = df['fechamento'].iloc[-1]
                             pnl_pct = ((preco_saida - p_entrada_antigo) / p_entrada_antigo) * 100 if p_entrada_antigo > 0 else 0
                             logger.info(LogCategory.POSITION_STATUS, f"⚠️ [BOT REVERSÃO] Relatório de PnL | Entrada: {p_entrada_antigo:.2f} | Saída (Aprox): {preco_saida:.2f} | Status: Fechamento Manual | PnL: {pnl_pct:.2f}%", MODULE_NAME, symbol=cripto)
+                            orchestrator.log_trade_closed('mean_reversion', cripto, 'fechamento_manual', risco_efetivo_valor)
 
                 elif estado_de_trade == EstadoDeTrade.VENDIDO:
                     p_entrada_antigo = preco_entrada
@@ -353,16 +356,18 @@ def start_live_trading_bot(
                             
                             pnl_pct = ((p_entrada_antigo - p_alvo_antigo) / p_entrada_antigo) * 100 if p_entrada_antigo > 0 else 0
                             logger.info(LogCategory.POSITION_STATUS, f"💰 [BOT REVERSÃO] Relatório de PnL | Entrada: {p_entrada_antigo:.2f} | Saída: {p_alvo_antigo:.2f} | Status: Take Profit | PnL: +{pnl_pct:.2f}%", MODULE_NAME, symbol=cripto)
-                            
+                            orchestrator.log_trade_closed('mean_reversion', cripto, 'take_profit', risco_efetivo_valor)
+
                         elif df['maxima'].iloc[-1] >= p_stop_antigo and p_stop_antigo != 0:
                             estado_de_trade = EstadoDeTrade.DE_FORA
                             vela_fechou_trade = df.index[-1]
                             stops_consecutivos += 1
                             last_loss_time = time.time()
                             salvar_estado_cb(stops_consecutivos, bloqueio_ate, last_loss_time, logger)
-                            
+
                             pnl_pct = ((p_entrada_antigo - p_stop_antigo) / p_entrada_antigo) * 100 if p_entrada_antigo > 0 else 0
                             logger.info(LogCategory.POSITION_STATUS, f"🛑 [BOT REVERSÃO] Relatório de PnL | Entrada: {p_entrada_antigo:.2f} | Saída: {p_stop_antigo:.2f} | Status: Stop Loss | PnL: {pnl_pct:.2f}%", MODULE_NAME, symbol=cripto)
+                            orchestrator.log_trade_closed('mean_reversion', cripto, 'stop_loss', risco_efetivo_valor)
 
                             if stops_consecutivos >= MAX_STOPS_CONSECUTIVOS:
                                 bloqueio_ate = time.time() + (PAUSA_CIRCUIT_BREAKER_HORAS * 3600)
@@ -374,6 +379,7 @@ def start_live_trading_bot(
                             preco_saida = df['fechamento'].iloc[-1]
                             pnl_pct = ((p_entrada_antigo - preco_saida) / p_entrada_antigo) * 100 if p_entrada_antigo > 0 else 0
                             logger.info(LogCategory.POSITION_STATUS, f"⚠️ [BOT REVERSÃO] Relatório de PnL | Entrada: {p_entrada_antigo:.2f} | Saída (Aprox): {preco_saida:.2f} | Status: Fechamento Manual | PnL: {pnl_pct:.2f}%", MODULE_NAME, symbol=cripto)
+                            orchestrator.log_trade_closed('mean_reversion', cripto, 'fechamento_manual', risco_efetivo_valor)
 
                 # ── BUSCA DE NOVO SETUP ──────────────────────────────────────────────
                 elif estado_de_trade == EstadoDeTrade.DE_FORA and df.index[-1] != vela_fechou_trade:
