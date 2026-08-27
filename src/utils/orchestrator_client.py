@@ -102,6 +102,38 @@ class FleetOrchestrator:
         except Exception:
             pass
 
+    def log_evaluator_decision(self, cripto, justificativa, acao_tomada, confianca, nome_bot):
+        """
+        Registra a decisão do Entry Evaluator no Redis (evaluations_log) —
+        best-effort, nunca lança exceção nem bloqueia o fluxo do trade.
+
+        Substitui o antigo _registrar_avaliacao(), que gravava num caminho
+        Windows hardcoded (C:/Users/.../logs_avaliacoes.jsonl) e por isso
+        nunca funcionou em produção no Render (Linux) — o Reversão à Média
+        nunca apareceu no histórico de avaliações usado pra auditoria da
+        frota. Mesmo schema usado por Sniper/Vanguarda (campos 'data', 'bot',
+        'cripto', 'acao_tomada', 'confianca', 'justificativa'), para que os
+        dois já leiam este bot corretamente.
+        """
+        if not self.url or not self.token:
+            return
+        try:
+            registro = {
+                'data': datetime.now().isoformat(),
+                'bot': nome_bot,
+                'cripto': cripto,
+                'acao_tomada': acao_tomada,
+                'confianca': confianca,
+                'justificativa': justificativa,
+            }
+            payload = json.dumps(registro, ensure_ascii=False)
+            endpoint = f"{self.url}/LPUSH/evaluations_log"
+            req = urllib.request.Request(endpoint, data=payload.encode('utf-8'), method='POST')
+            req.add_header('Authorization', f'Bearer {self.token}')
+            urllib.request.urlopen(req, timeout=5)
+        except Exception:
+            pass
+
     def send_heartbeat(self, bot_name):
         """
         Grava um sinal de vida no Redis (best-effort — nunca bloqueia nem lança

@@ -8,6 +8,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from corretoras.funcoes_bybit import busca_velas, saldo_da_conta, quantidade_minima_para_operar, abre_compra, abre_venda, tem_trade_aberto
 from utils.utilidades import calcular_risco_retorno_compra, calcular_risco_retorno_venda
 from utils.logging import LogCategory
+from utils.orchestrator_client import FleetOrchestrator
 
 class TradeEntryEvaluatorParser(BaseParser):
     """Parser específico para o Trade Entry Evaluator"""
@@ -118,26 +119,6 @@ class TradeEntryEvaluatorParser(BaseParser):
 
 
     @staticmethod
-    def _registrar_avaliacao(cripto, justificativa, acao_tomada, confianca, nome_bot):
-        caminho_arquivo = "C:/Users/user/Documents/Geral_agentes_antigravitty/01_Ecossistema_Quant_Cripto/Quantitative_optimizer/logs_avaliacoes.jsonl"
-        try:
-            from datetime import datetime
-            import json
-            import os
-            agora = datetime.now()
-            nova_avaliacao = {
-                'data': agora.isoformat(),
-                'bot': nome_bot,
-                'cripto': cripto,
-                'acao_tomada': acao_tomada,
-                'confianca': confianca,
-                'justificativa': justificativa
-            }
-            with open(caminho_arquivo, 'a', encoding='utf-8') as f:
-                f.write(json.dumps(nova_avaliacao, ensure_ascii=False) + '\n')
-        except Exception as e:
-            print(f"Erro ao registrar avaliação: {e}")
-
     def processar_resposta(resposta, cripto, subconta, tempo_grafico, risco_por_operacao, logger):
         confianca_aceitavel = 0.65
         risco_retorno_aceitavel = 1.5
@@ -157,7 +138,7 @@ class TradeEntryEvaluatorParser(BaseParser):
             
             # verifica se a confiança é suficiente para executar o trade e se existe 'ação':'ignorar' na lista de ações
             if confianca < confianca_aceitavel:
-                TradeEntryEvaluatorParser._registrar_avaliacao(cripto, f"Confiança baixa ({confianca}). {justificativa}", "REJEITADO", confianca, "Reversão a Média")
+                FleetOrchestrator(logger=logger).log_evaluator_decision(cripto, f"Confiança baixa ({confianca}). {justificativa}", "REJEITADO", confianca, "Mean Reversion")
                 if acoes and any(acao.get('acao') == 'ignorar' for acao in acoes):
                     logger.agent(LogCategory.AGENT_DECISION, "Trade ignorado conforme decisão do agente", "trade_entry_evaluator_parser",
                         agent_name="Entry Evaluator", symbol=cripto, action="ignorar", decision="NO_ACTION")
@@ -171,7 +152,7 @@ class TradeEntryEvaluatorParser(BaseParser):
             if acoes:
                 for acao in acoes:
                     if acao.get('acao') == 'ignorar':
-                        TradeEntryEvaluatorParser._registrar_avaliacao(cripto, f"Agente decidiu ignorar. {justificativa}", "REJEITADO", confianca, "Reversão a Média")
+                        FleetOrchestrator(logger=logger).log_evaluator_decision(cripto, f"Agente decidiu ignorar. {justificativa}", "REJEITADO", confianca, "Mean Reversion")
                         logger.agent(LogCategory.AGENT_DECISION, "Trade ignorado conforme decisão do agente", "trade_entry_evaluator_parser",
                             agent_name="Entry Evaluator", symbol=cripto, action="ignorar", decision="NO_ACTION")
                         return False
@@ -198,20 +179,28 @@ class TradeEntryEvaluatorParser(BaseParser):
 
                         saldo = saldo_da_conta(subconta) * 0.98
                         tamanho_posicao = saldo * risco_por_operacao / distancia_stop_percent
+
+                        # Trava de Segurança: Alavancagem Máxima 3x
+                        if tamanho_posicao > (saldo * 3):
+                            logger.warning(LogCategory.INVALID_ORDER_QTY, "Risco rejeitado: Alavancagem exigida maior que 3x - operação cancelada", "trade_entry_evaluator_parser",
+                                symbol=cripto, required_leverage=float(tamanho_posicao/saldo), max_leverage=3)
+                            FleetOrchestrator(logger=logger).log_evaluator_decision(cripto, f"Risco Rejeitado: Alavancagem exigida > 3x. {justificativa}", "REJEITADO", confianca, "Mean Reversion")
+                            return False
+
                         qtd_cripto_para_operar = tamanho_posicao / preco_atual
 
                         quantidade_cripto_para_operar = int(qtd_cripto_para_operar / qtd_min_para_operar) * qtd_min_para_operar
                         quantidade_cripto_para_operar = Decimal(quantidade_cripto_para_operar)
                         quantidade_cripto_para_operar = quantidade_cripto_para_operar.quantize(Decimal(f'{qtd_min_para_operar}'), rounding=ROUND_DOWN)
-                        
+
                         # Validar quantidade antes de operar
                         if quantidade_cripto_para_operar <= 0:
                             logger.warning(LogCategory.INVALID_ORDER_QTY, "Quantidade calculada é zero ou negativa - operação cancelada", "trade_entry_evaluator_parser",
-                                symbol=cripto, calculated_quantity=float(quantidade_cripto_para_operar), 
+                                symbol=cripto, calculated_quantity=float(quantidade_cripto_para_operar),
                                 min_quantity=qtd_min_para_operar, current_price=preco_atual,
                                 stop_price=preco_stop, target_price=preco_alvo)
                             return False
-                        
+
                         risco_retorno = calcular_risco_retorno_compra(preco_atual, preco_stop, preco_alvo)
                         if risco_retorno < risco_retorno_aceitavel:
                             logger.warning(LogCategory.LOW_RISK_REWARD, "Risco/retorno abaixo do aceitável - operação ignorada", "trade_entry_evaluator_parser",
@@ -223,15 +212,14 @@ class TradeEntryEvaluatorParser(BaseParser):
                             logger.warning(LogCategory.TRADE_OPEN_ERROR, "Erro ao abrir posição - operação ignorada", "trade_entry_evaluator_parser",
                                 symbol=cripto, error_message=resposta.get('retMsg'), error_code=resposta.get('retCode'))
                             return False
-                        
+
                         logger.trading(LogCategory.POSITION_OPEN, "Posição LONG aberta pelo Entry Evaluator", "trade_entry_evaluator_parser",
                             symbol=cripto, entry_price=preco_atual, stop_price=preco_stop, target_price=preco_alvo,
                             position_size=float(quantidade_cripto_para_operar), risk_reward=risco_retorno, operation="compra")
 
-                        TradeEntryEvaluatorParser._registrar_avaliacao(cripto, f"Trade LONG Aberto! {justificativa}", "EXECUTADO", confianca, "Reversão a Média")
+                        FleetOrchestrator(logger=logger).log_evaluator_decision(cripto, f"Trade LONG Aberto! {justificativa}", "EXECUTADO", confianca, "Mean Reversion")
 
                         try:
-                            from utils.orchestrator_client import FleetOrchestrator
                             _, preco_real_entrada, _, _, _, _ = tem_trade_aberto(cripto, subconta)
                             FleetOrchestrator(logger=logger).log_execution_quality(cripto, "mean_reversion", "compra", preco_atual, preco_real_entrada)
                         except Exception:
@@ -261,20 +249,28 @@ class TradeEntryEvaluatorParser(BaseParser):
 
                         saldo = saldo_da_conta(subconta) * 0.98
                         tamanho_posicao = saldo * risco_por_operacao / distancia_stop_percent
+
+                        # Trava de Segurança: Alavancagem Máxima 3x
+                        if tamanho_posicao > (saldo * 3):
+                            logger.warning(LogCategory.INVALID_ORDER_QTY, "Risco rejeitado: Alavancagem exigida maior que 3x - operação cancelada", "trade_entry_evaluator_parser",
+                                symbol=cripto, required_leverage=float(tamanho_posicao/saldo), max_leverage=3)
+                            FleetOrchestrator(logger=logger).log_evaluator_decision(cripto, f"Risco Rejeitado: Alavancagem exigida > 3x. {justificativa}", "REJEITADO", confianca, "Mean Reversion")
+                            return False
+
                         qtd_cripto_para_operar = tamanho_posicao / preco_atual
 
                         quantidade_cripto_para_operar = int(qtd_cripto_para_operar / qtd_min_para_operar) * qtd_min_para_operar
                         quantidade_cripto_para_operar = Decimal(quantidade_cripto_para_operar)
                         quantidade_cripto_para_operar = quantidade_cripto_para_operar.quantize(Decimal(f'{qtd_min_para_operar}'), rounding=ROUND_DOWN)
-                        
+
                         # Validar quantidade antes de operar
                         if quantidade_cripto_para_operar <= 0:
                             logger.warning(LogCategory.INVALID_ORDER_QTY, "Quantidade calculada é zero ou negativa - operação cancelada", "trade_entry_evaluator_parser",
-                                symbol=cripto, calculated_quantity=float(quantidade_cripto_para_operar), 
+                                symbol=cripto, calculated_quantity=float(quantidade_cripto_para_operar),
                                 min_quantity=qtd_min_para_operar, current_price=preco_atual,
                                 stop_price=preco_stop, target_price=preco_alvo)
                             return False
-                        
+
                         risco_retorno = calcular_risco_retorno_venda(preco_atual, preco_stop, preco_alvo)
                         if risco_retorno < risco_retorno_aceitavel:
                             logger.warning(LogCategory.LOW_RISK_REWARD, "Risco/retorno abaixo do aceitável - operação ignorada", "trade_entry_evaluator_parser",
@@ -286,15 +282,14 @@ class TradeEntryEvaluatorParser(BaseParser):
                             logger.warning(LogCategory.TRADE_OPEN_ERROR, "Erro ao abrir posição - operação ignorada", "trade_entry_evaluator_parser",
                                 symbol=cripto, error_message=resposta.get('retMsg'), error_code=resposta.get('retCode'))
                             return False
-                        
+
                         logger.trading(LogCategory.POSITION_OPEN, "Posição SHORT aberta pelo Entry Evaluator", "trade_entry_evaluator_parser",
                             symbol=cripto, entry_price=preco_atual, stop_price=preco_stop, target_price=preco_alvo,
                             position_size=float(quantidade_cripto_para_operar), risk_reward=risco_retorno, operation="venda")
 
-                        TradeEntryEvaluatorParser._registrar_avaliacao(cripto, f"Trade SHORT Aberto! {justificativa}", "EXECUTADO", confianca, "Reversão a Média")
+                        FleetOrchestrator(logger=logger).log_evaluator_decision(cripto, f"Trade SHORT Aberto! {justificativa}", "EXECUTADO", confianca, "Mean Reversion")
 
                         try:
-                            from utils.orchestrator_client import FleetOrchestrator
                             _, preco_real_entrada, _, _, _, _ = tem_trade_aberto(cripto, subconta)
                             FleetOrchestrator(logger=logger).log_execution_quality(cripto, "mean_reversion", "venda", preco_atual, preco_real_entrada)
                         except Exception:
