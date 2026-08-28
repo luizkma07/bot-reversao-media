@@ -420,7 +420,7 @@ def start_live_trading_bot(
                                     # reavalia a cada 30s, bem antes do candle de 30min fechar) - exclui essa
                                     # linha parcial antes de consolidar/mandar pra LLM, senao ela julga volume
                                     # e indicadores sobre numeros que ainda nao existem de verdade.
-                                    df_1w, df_1d, df_consolidado = prepare_multi_timeframe_technical_data(df.iloc[:-1], cripto, nro_subconta=subconta)
+                                    df_1w, df_1d, df_consolidado = prepare_multi_timeframe_technical_data(df.iloc[:-1].copy(), cripto, nro_subconta=subconta)
 
                                     # FIX #1+#2: recalcula indicadores no df consolidado para sincronia com o LLM
                                     rsi_sync = calcular_rsi(df_consolidado, rsi_periodo)
@@ -457,7 +457,8 @@ def start_live_trading_bot(
                                             rsi_sync.iloc[-1], bb_sup_sync.iloc[-1], bb_med_sync.iloc[-1], bb_inf_sync.iloc[-1],
                                             adx_sync.iloc[-1],
                                             cripto, qtd_min_para_operar, subconta, 'compra',
-                                            df_consolidado, df_1w, df_1d, df_4h
+                                            df_consolidado, df_1w, df_1d, df_4h,
+                                            preco_atual_ao_vivo=preco_atual_travado
                                         )
                                     )
 
@@ -474,7 +475,7 @@ def start_live_trading_bot(
                                         resposta, cripto, subconta, tempo_grafico, risco_efetivo_valor, logger, preco_atual_travado=preco_atual_travado
                                     )
                                     if abriu_trade:
-                                        vela_abertura_trade = df_consolidado.index[-1]
+                                        vela_abertura_trade = df.index[-1]
                                         ultima_execucao_trade_conductor = datetime.now()
 
                     if vendas_habilitadas:
@@ -505,7 +506,7 @@ def start_live_trading_bot(
 
                                     # [ANALISE DE ARQUITETURA] Ver comentario equivalente no branch de compra:
                                     # exclui a vela em formacao (iloc[-1]) antes de consolidar pra LLM.
-                                    df_1w, df_1d, df_consolidado = prepare_multi_timeframe_technical_data(df.iloc[:-1], cripto, nro_subconta=subconta)
+                                    df_1w, df_1d, df_consolidado = prepare_multi_timeframe_technical_data(df.iloc[:-1].copy(), cripto, nro_subconta=subconta)
 
                                     rsi_sync = calcular_rsi(df_consolidado, rsi_periodo)
                                     bb_sup_sync, bb_med_sync, bb_inf_sync = calcular_bandas_bollinger(df_consolidado, bb_periodo, bb_desvio_padrao)
@@ -540,7 +541,8 @@ def start_live_trading_bot(
                                             rsi_sync.iloc[-1], bb_sup_sync.iloc[-1], bb_med_sync.iloc[-1], bb_inf_sync.iloc[-1],
                                             adx_sync.iloc[-1],
                                             cripto, qtd_min_para_operar, subconta, 'venda',
-                                            df_consolidado, df_1w, df_1d, df_4h
+                                            df_consolidado, df_1w, df_1d, df_4h,
+                                            preco_atual_ao_vivo=preco_atual_travado
                                         )
                                     )
 
@@ -557,7 +559,7 @@ def start_live_trading_bot(
                                         resposta, cripto, subconta, tempo_grafico, risco_efetivo_valor, logger, preco_atual_travado=preco_atual_travado
                                     )
                                     if abriu_trade:
-                                        vela_abertura_trade = df_consolidado.index[-1]
+                                        vela_abertura_trade = df.index[-1]
                                         ultima_execucao_trade_conductor = datetime.now()
 
                 elif estado_de_trade == EstadoDeTrade.DE_FORA:

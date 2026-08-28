@@ -184,10 +184,12 @@ class TradeEntryEvaluatorParser(BaseParser):
                         if preco_atual < preco_stop:
                             logger.warning(LogCategory.INVALID_PRICES, "Preço atual é menor que o preço de stop - operação cancelada", "trade_entry_evaluator_parser",
                                 symbol=cripto, current_price=preco_atual, stop_price=preco_stop)
+                            FleetOrchestrator(logger=logger).log_evaluator_decision(cripto, f"Risco Rejeitado: Preço atual menor que stop. {justificativa}", "REJEITADO", confianca, "Mean Reversion")
                             return False
                         elif preco_atual > preco_alvo:
                             logger.warning(LogCategory.INVALID_PRICES, "Preço atual é maior que o preço de alvo - operação cancelada", "trade_entry_evaluator_parser",
                                 symbol=cripto, current_price=preco_atual, target_price=preco_alvo)
+                            FleetOrchestrator(logger=logger).log_evaluator_decision(cripto, f"Risco Rejeitado: Preço atual maior que alvo. {justificativa}", "REJEITADO", confianca, "Mean Reversion")
                             return False
 
                         distancia_stop_percent = (preco_atual - preco_stop) / preco_atual
@@ -214,18 +216,21 @@ class TradeEntryEvaluatorParser(BaseParser):
                                 symbol=cripto, calculated_quantity=float(quantidade_cripto_para_operar),
                                 min_quantity=qtd_min_para_operar, current_price=preco_atual,
                                 stop_price=preco_stop, target_price=preco_alvo)
+                            FleetOrchestrator(logger=logger).log_evaluator_decision(cripto, f"Risco Rejeitado: Qtd menor ou igual a zero. {justificativa}", "REJEITADO", confianca, "Mean Reversion")
                             return False
 
                         risco_retorno = calcular_risco_retorno_compra(preco_atual, preco_stop, preco_alvo)
                         if risco_retorno < risco_retorno_aceitavel:
                             logger.warning(LogCategory.LOW_RISK_REWARD, "Risco/retorno abaixo do aceitável - operação ignorada", "trade_entry_evaluator_parser",
                                 symbol=cripto, risk_reward=risco_retorno, threshold=risco_retorno_aceitavel)
+                            FleetOrchestrator(logger=logger).log_evaluator_decision(cripto, f"Risco Rejeitado: RR < {risco_retorno_aceitavel}. {justificativa}", "REJEITADO", confianca, "Mean Reversion")
                             return False
 
                         resposta = abre_compra(cripto, str(quantidade_cripto_para_operar), str(preco_stop), str(preco_alvo), subconta)
                         if resposta.get('retCode') != 0:
                             logger.warning(LogCategory.TRADE_OPEN_ERROR, "Erro ao abrir posição - operação ignorada", "trade_entry_evaluator_parser",
                                 symbol=cripto, error_message=resposta.get('retMsg'), error_code=resposta.get('retCode'))
+                            FleetOrchestrator(logger=logger).log_evaluator_decision(cripto, f"Erro Exchange: {resposta.get('retMsg')}. {justificativa}", "REJEITADO", confianca, "Mean Reversion")
                             return False
 
                         logger.trading(LogCategory.POSITION_OPEN, "Posição LONG aberta pelo Entry Evaluator", "trade_entry_evaluator_parser",
@@ -257,10 +262,12 @@ class TradeEntryEvaluatorParser(BaseParser):
                         if preco_atual > preco_stop:
                             logger.warning(LogCategory.INVALID_PRICES, "Preço atual é maior que o preço de stop - operação cancelada", "trade_entry_evaluator_parser",
                                 symbol=cripto, current_price=preco_atual, stop_price=preco_stop)
+                            FleetOrchestrator(logger=logger).log_evaluator_decision(cripto, f"Risco Rejeitado: Preço atual maior que stop. {justificativa}", "REJEITADO", confianca, "Mean Reversion")
                             return False
                         elif preco_atual < preco_alvo:
                             logger.warning(LogCategory.INVALID_PRICES, "Preço atual é menor que o preço de alvo - operação cancelada", "trade_entry_evaluator_parser",
                                 symbol=cripto, current_price=preco_atual, target_price=preco_alvo)
+                            FleetOrchestrator(logger=logger).log_evaluator_decision(cripto, f"Risco Rejeitado: Preço atual menor que alvo. {justificativa}", "REJEITADO", confianca, "Mean Reversion")
                             return False
 
                         distancia_stop_percent = (preco_stop - preco_atual) / preco_atual
@@ -287,18 +294,21 @@ class TradeEntryEvaluatorParser(BaseParser):
                                 symbol=cripto, calculated_quantity=float(quantidade_cripto_para_operar),
                                 min_quantity=qtd_min_para_operar, current_price=preco_atual,
                                 stop_price=preco_stop, target_price=preco_alvo)
+                            FleetOrchestrator(logger=logger).log_evaluator_decision(cripto, f"Risco Rejeitado: Qtd menor ou igual a zero. {justificativa}", "REJEITADO", confianca, "Mean Reversion")
                             return False
 
                         risco_retorno = calcular_risco_retorno_venda(preco_atual, preco_stop, preco_alvo)
                         if risco_retorno < risco_retorno_aceitavel:
                             logger.warning(LogCategory.LOW_RISK_REWARD, "Risco/retorno abaixo do aceitável - operação ignorada", "trade_entry_evaluator_parser",
                                 symbol=cripto, risk_reward=risco_retorno, threshold=risco_retorno_aceitavel)
+                            FleetOrchestrator(logger=logger).log_evaluator_decision(cripto, f"Risco Rejeitado: RR < {risco_retorno_aceitavel}. {justificativa}", "REJEITADO", confianca, "Mean Reversion")
                             return False
 
                         resposta = abre_venda(cripto, str(quantidade_cripto_para_operar), str(preco_stop), str(preco_alvo), subconta)
                         if resposta.get('retCode') != 0:
                             logger.warning(LogCategory.TRADE_OPEN_ERROR, "Erro ao abrir posição - operação ignorada", "trade_entry_evaluator_parser",
                                 symbol=cripto, error_message=resposta.get('retMsg'), error_code=resposta.get('retCode'))
+                            FleetOrchestrator(logger=logger).log_evaluator_decision(cripto, f"Erro Exchange: {resposta.get('retMsg')}. {justificativa}", "REJEITADO", confianca, "Mean Reversion")
                             return False
 
                         logger.trading(LogCategory.POSITION_OPEN, "Posição SHORT aberta pelo Entry Evaluator", "trade_entry_evaluator_parser",

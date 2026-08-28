@@ -28,13 +28,19 @@ def prompt_trade_entry_evaluator(
     df_1w,
     df_1d,
     df_4h,
+    preco_atual_ao_vivo=None,
 ):
     df = df.reset_index()
     df_1w = df_1w.reset_index()
     df_1d = df_1d.reset_index()
     df_4h = df_4h.reset_index()
 
-    preco_atual = df['fechamento'].iloc[-1]
+    # [ANALISE DE ARQUITETURA] df aqui já veio sem a vela em formação (só
+    # velas fechadas, pra não julgar indicador sobre dado parcial). Mas o
+    # preço de entrada REAL é o preço ao vivo agora - se preco_atual_ao_vivo
+    # não for passado (chamador antigo), cai no fechamento da última vela
+    # fechada como antes, só pra não quebrar compatibilidade.
+    preco_atual = preco_atual_ao_vivo if preco_atual_ao_vivo is not None else df['fechamento'].iloc[-1]
     desvio_da_media_pct = abs(preco_atual - bb_media_atual) / bb_media_atual * 100
 
     if lado.lower() == "compra":
@@ -45,7 +51,7 @@ def prompt_trade_entry_evaluator(
         detalhes = (
             f"Vela anterior fechou abaixo/na Banda Inferior de Bollinger e o RSI atingiu "
             f"zona de sobrevenda no timeframe de {tempo_grafico} minutos. "
-            f"Vela atual confirmou retorno (fechou acima da anterior)."
+            f"O preço ao vivo (ver abaixo) já confirma retorno acima do fechamento da última vela fechada."
         )
     else:
         direcao = "Venda (Short — Reversão de Sobrecompra)"
@@ -55,7 +61,7 @@ def prompt_trade_entry_evaluator(
         detalhes = (
             f"Vela anterior fechou acima/na Banda Superior de Bollinger e o RSI atingiu "
             f"zona de sobrecompra no timeframe de {tempo_grafico} minutos. "
-            f"Vela atual confirmou retorno (fechou abaixo da anterior)."
+            f"O preço ao vivo (ver abaixo) já confirma retorno abaixo do fechamento da última vela fechada."
         )
 
     return dedent(f"""
@@ -71,6 +77,7 @@ Sinal de entrada de REVERSÃO À MÉDIA identificado.
 - Direção: {direcao}
 - Subconta: {subconta}
 - Casas decimais (qty_step): {qtd_min_para_operar}
+- PREÇO ATUAL AO VIVO (será o preço real de entrada — ancore stop e alvo nele): {preco_atual}
 
 # Indicadores de Mean Reversion:
 - RSI ({rsi_periodo} períodos): {rsi_atual:.2f} → {status_rsi}
