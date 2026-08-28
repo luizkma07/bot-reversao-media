@@ -119,7 +119,19 @@ class TradeEntryEvaluatorParser(BaseParser):
 
 
     @staticmethod
-    def processar_resposta(resposta, cripto, subconta, tempo_grafico, risco_por_operacao, logger):
+    def processar_resposta(resposta, cripto, subconta, tempo_grafico, risco_por_operacao, logger, preco_atual_travado=None):
+        """
+        preco_atual_travado: preço capturado UMA VEZ, no momento em que o
+        sinal foi montado para a LLM (antes de chamá-la). Se fornecido, o
+        parser usa esse valor em vez de buscar um preço novo na Bybit.
+
+        [ANALISE DE ARQUITETURA] Sem isso, o parser buscava um preço NOVO
+        aqui, depois da LLM já ter respondido - ou seja, a LLM calculava o
+        RRR com um preço, e o Python recalculava minutos depois com outro.
+        O preço anda nesse intervalo, o que degrada o RRR de forma
+        sistemática logo abaixo do mínimo aceitável. Mantém compatibilidade
+        (None = busca como antes) para não quebrar nenhum outro chamador.
+        """
         confianca_aceitavel = 0.65
         risco_retorno_aceitavel = 1.5
         
@@ -163,8 +175,11 @@ class TradeEntryEvaluatorParser(BaseParser):
 
                         qtd_min_para_operar = quantidade_minima_para_operar(cripto, subconta)
             
-                        df = busca_velas(cripto, tempo_grafico, [9,21])
-                        preco_atual = df['fechamento'].iloc[-1]
+                        if preco_atual_travado is not None:
+                            preco_atual = preco_atual_travado
+                        else:
+                            df = busca_velas(cripto, tempo_grafico, [9,21])
+                            preco_atual = df['fechamento'].iloc[-1]
 
                         if preco_atual < preco_stop:
                             logger.warning(LogCategory.INVALID_PRICES, "Preço atual é menor que o preço de stop - operação cancelada", "trade_entry_evaluator_parser",
@@ -233,8 +248,11 @@ class TradeEntryEvaluatorParser(BaseParser):
 
                         qtd_min_para_operar = quantidade_minima_para_operar(cripto, subconta)
 
-                        df = busca_velas(cripto, tempo_grafico, [9,21])
-                        preco_atual = df['fechamento'].iloc[-1]
+                        if preco_atual_travado is not None:
+                            preco_atual = preco_atual_travado
+                        else:
+                            df = busca_velas(cripto, tempo_grafico, [9,21])
+                            preco_atual = df['fechamento'].iloc[-1]
 
                         if preco_atual > preco_stop:
                             logger.warning(LogCategory.INVALID_PRICES, "Preço atual é maior que o preço de stop - operação cancelada", "trade_entry_evaluator_parser",

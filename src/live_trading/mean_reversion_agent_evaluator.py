@@ -416,7 +416,11 @@ def start_live_trading_bot(
                                     vela_executou_trade_entry_evaluator = df.index[-1]
 
                                     # FIX #1: enriquece df so APOS confirmacao do gatilho
-                                    df_1w, df_1d, df_consolidado = prepare_multi_timeframe_technical_data(df, cripto, nro_subconta=subconta)
+                                    # [ANALISE DE ARQUITETURA] df.iloc[-1] ainda esta se formando (o loop
+                                    # reavalia a cada 30s, bem antes do candle de 30min fechar) - exclui essa
+                                    # linha parcial antes de consolidar/mandar pra LLM, senao ela julga volume
+                                    # e indicadores sobre numeros que ainda nao existem de verdade.
+                                    df_1w, df_1d, df_consolidado = prepare_multi_timeframe_technical_data(df.iloc[:-1], cripto, nro_subconta=subconta)
 
                                     # FIX #1+#2: recalcula indicadores no df consolidado para sincronia com o LLM
                                     rsi_sync = calcular_rsi(df_consolidado, rsi_periodo)
@@ -440,6 +444,10 @@ def start_live_trading_bot(
                                         adx=round(adx_sync.iloc[-1], 2)
                                     )
 
+                                    # Trava o preco UMA VEZ, no mesmo instante em que a LLM vai analisar - o
+                                    # parser usa este mesmo valor depois, em vez de remedir na Bybit minutos
+                                    # depois (o que degradava o RRR por drift de preco).
+                                    preco_atual_travado = df['fechamento'].iloc[-1]
                                     resposta = trade_entry_evaluator.run(
                                         prompt_trade_entry_evaluator(
                                             saldo, tempo_grafico,
@@ -463,7 +471,7 @@ def start_live_trading_bot(
                                     )
 
                                     abriu_trade = TradeEntryEvaluatorParser.processar_resposta(
-                                        resposta, cripto, subconta, tempo_grafico, risco_efetivo_valor, logger
+                                        resposta, cripto, subconta, tempo_grafico, risco_efetivo_valor, logger, preco_atual_travado=preco_atual_travado
                                     )
                                     if abriu_trade:
                                         vela_abertura_trade = df_consolidado.index[-1]
@@ -495,7 +503,9 @@ def start_live_trading_bot(
                                 if estado_de_trade == EstadoDeTrade.DE_FORA and df.index[-1] != vela_executou_trade_entry_evaluator:
                                     vela_executou_trade_entry_evaluator = df.index[-1]
 
-                                    df_1w, df_1d, df_consolidado = prepare_multi_timeframe_technical_data(df, cripto, nro_subconta=subconta)
+                                    # [ANALISE DE ARQUITETURA] Ver comentario equivalente no branch de compra:
+                                    # exclui a vela em formacao (iloc[-1]) antes de consolidar pra LLM.
+                                    df_1w, df_1d, df_consolidado = prepare_multi_timeframe_technical_data(df.iloc[:-1], cripto, nro_subconta=subconta)
 
                                     rsi_sync = calcular_rsi(df_consolidado, rsi_periodo)
                                     bb_sup_sync, bb_med_sync, bb_inf_sync = calcular_bandas_bollinger(df_consolidado, bb_periodo, bb_desvio_padrao)
@@ -517,6 +527,10 @@ def start_live_trading_bot(
                                         adx=round(adx_sync.iloc[-1], 2)
                                     )
 
+                                    # Trava o preco UMA VEZ, no mesmo instante em que a LLM vai analisar - o
+                                    # parser usa este mesmo valor depois, em vez de remedir na Bybit minutos
+                                    # depois (o que degradava o RRR por drift de preco).
+                                    preco_atual_travado = df['fechamento'].iloc[-1]
                                     resposta = trade_entry_evaluator.run(
                                         prompt_trade_entry_evaluator(
                                             saldo, tempo_grafico,
@@ -540,7 +554,7 @@ def start_live_trading_bot(
                                     )
 
                                     abriu_trade = TradeEntryEvaluatorParser.processar_resposta(
-                                        resposta, cripto, subconta, tempo_grafico, risco_efetivo_valor, logger
+                                        resposta, cripto, subconta, tempo_grafico, risco_efetivo_valor, logger, preco_atual_travado=preco_atual_travado
                                     )
                                     if abriu_trade:
                                         vela_abertura_trade = df_consolidado.index[-1]
