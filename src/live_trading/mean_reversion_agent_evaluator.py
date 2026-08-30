@@ -133,12 +133,17 @@ def calcular_atr(df, periodo=14):
 
 def mercado_tem_volatilidade_suficiente(df, periodo=14, multiplicador=0.8, last_loss_time=0.0, logger=None, symbol='', module=''):
     try:
-        atr_atual, atr_medio = calcular_atr(df, periodo)
+        # df.iloc[:-1]: exclui a vela ainda em formação. calcular_atr faz
+        # atr.iloc[-1], que sobre o df bruto mediria o ATR da vela parcial
+        # (viés negativo medido: ~-0.05 a -0.08 no ratio atr_atual/atr_medio
+        # nos primeiros 20min de vela) — o mesmo bug de dado incompleto já
+        # corrigido no preço/volume enviados à LLM, agora reaplicado aqui.
+        atr_atual, atr_medio = calcular_atr(df.iloc[:-1], periodo)
         horas_desde_loss = (time.time() - last_loss_time) / 3600
         multiplicador_efetivo = multiplicador
         if horas_desde_loss < 4.0:
             multiplicador_efetivo = multiplicador + 0.4
-            
+
         limite_minimo = multiplicador_efetivo * atr_medio
         volatilidade_ok = atr_atual >= limite_minimo
         return volatilidade_ok
@@ -161,9 +166,13 @@ def volume_nao_e_anomalia(df, periodo=20, multiplicador_max=2.0, logger=None, sy
 
 def mercado_ok_para_entrada(df, lado, adx_s, plus_di_s, minus_di_s, adx_limite=25, di_limite=30, logger=None, symbol='', module=''):
     try:
-        adx_v = adx_s.iloc[-1]
-        pdi_v = plus_di_s.iloc[-1]
-        mdi_v = minus_di_s.iloc[-1]
+        # .iloc[-2]: última vela FECHADA. adx_s/plus_di_s/minus_di_s são calculados
+        # sobre o df completo (que inclui a vela ainda em formação em iloc[-1]);
+        # ler -1 aqui julgaria força de tendência sobre um período incompleto —
+        # inconsistente com cond_rsi_compra/venda logo acima, que já usam -2.
+        adx_v = adx_s.iloc[-2]
+        pdi_v = plus_di_s.iloc[-2]
+        mdi_v = minus_di_s.iloc[-2]
         if adx_v >= adx_limite:
             return False
         if lado.lower() == 'compra' and mdi_v > di_limite:
@@ -232,6 +241,7 @@ def start_live_trading_bot(
     vela_abertura_trade = None
     vela_fechou_trade = None  # será inicializado com a última vela no 1º ciclo
     vela_executou_trade_entry_evaluator = None
+    vela_bloqueou_atr = None  # dedup do log de bloqueio por ATR — 1x por vela, não 1x por ciclo (30s)
     ultima_execucao_trade_conductor = None
 
     if estado_de_trade in [EstadoDeTrade.COMPRADO, EstadoDeTrade.VENDIDO]:
@@ -252,6 +262,16 @@ def start_live_trading_bot(
         allowed_side = "BOTH"
         risk_multiplier = 1.0
         atr_filtro_multiplicador_dinamico = atr_filtro_multiplicador
+        # agressividade_entrada (HIGH/NORMAL/LOW) do Alpha Strategist modula as
+        # bandas de RSI (entra cedo/tarde), não o teto de ADX — subir o teto de
+        # ADX deixaria o bot fadar tendências fortes, que é o modo de falha de
+        # um bot de reversão à média. adx_limite_maximo/di_limite_dominancia
+        # continuam fixos como trilho de risco. HIGH=38/62 é o valor que o
+        # docstring deste arquivo já documentava (v3, linha 7); o código tinha
+        # divergido para 35/65 — NORMAL abaixo preserva esse comportamento atual.
+        rsi_sobrevenda_efetivo = rsi_sobrevenda
+        rsi_sobrecompra_efetivo = rsi_sobrecompra
+        agressividade_entrada = 'NORMAL'  # default fora do if bot_state: evita valor "preso" de um ciclo anterior se o Redis cair
 
         if bot_state:
             if bot_state.get('status') == 'PAUSED':
@@ -267,6 +287,11 @@ def start_live_trading_bot(
                 risk_multiplier = float(bot_state['risk_multiplier'])
             if 'base_atr_multiplier' in bot_state:
                 atr_filtro_multiplicador_dinamico = float(bot_state['base_atr_multiplier'])
+            agressividade_entrada = bot_state.get('agressividade_entrada', 'NORMAL')
+            if agressividade_entrada == 'HIGH':
+                rsi_sobrevenda_efetivo, rsi_sobrecompra_efetivo = 38, 62
+            elif agressividade_entrada == 'LOW':
+                rsi_sobrevenda_efetivo, rsi_sobrecompra_efetivo = 30, 70
             if 'risco_efetivo' in bot_state:
                 risco_efetivo_valor = float(bot_state['risco_efetivo']) / 100.0
             else:
@@ -392,7 +417,7 @@ def start_live_trading_bot(
                     # FIX #4: Confirmacao real de reversao (vela atual colorida na direcao certa)
                     if compras_habilitadas:
                         cond_bb_compra = df['fechamento'].iloc[-2] <= bb_inferior.iloc[-2]
-                        cond_rsi_compra = rsi.iloc[-2] <= rsi_sobrevenda
+                        cond_rsi_compra = rsi.iloc[-2] <= rsi_sobrevenda_efetivo
                         cond_retorno_compra = (
                             df['fechamento'].iloc[-1] > df['fechamento'].iloc[-2]
                         )
@@ -407,7 +432,16 @@ def start_live_trading_bot(
                                                            adx_limite_maximo, di_limite_dominancia, logger, cripto, MODULE_NAME):
                                 pass
                             elif not mercado_tem_volatilidade_suficiente(df, atr_periodo, atr_filtro_multiplicador_dinamico, last_loss_time, logger, cripto, MODULE_NAME):
-                                pass
+                                if df.index[-1] != vela_bloqueou_atr:  # loga 1x por vela, não 1x por ciclo (30s)
+                                    vela_bloqueou_atr = df.index[-1]
+                                    _mult_efetivo = atr_filtro_multiplicador_dinamico + 0.4 if (time.time() - last_loss_time) / 3600 < 4.0 else atr_filtro_multiplicador_dinamico
+                                    orchestrator.log_evaluator_decision(
+                                        cripto=cripto,
+                                        justificativa=f"Sinal de COMPRA bloqueado: ATR atual abaixo do mínimo exigido (multiplicador efetivo {_mult_efetivo}) — mercado sem volatilidade suficiente para reversão.",
+                                        acao_tomada="REJEITADO",
+                                        confianca=0.0,
+                                        nome_bot="Mean Reversion"
+                                    )
                             elif not volume_nao_e_anomalia(df, volume_media_periodo, volume_multiplicador_max, logger, cripto, MODULE_NAME):
                                 pass
                             else:
@@ -451,7 +485,7 @@ def start_live_trading_bot(
                                     resposta = trade_entry_evaluator.run(
                                         prompt_trade_entry_evaluator(
                                             saldo, tempo_grafico,
-                                            rsi_periodo, rsi_sobrevenda, rsi_sobrecompra,
+                                            rsi_periodo, rsi_sobrevenda_efetivo, rsi_sobrecompra_efetivo,
                                             bb_periodo, bb_desvio_padrao,
                                             adx_periodo, adx_limite_maximo,
                                             rsi_sync.iloc[-1], bb_sup_sync.iloc[-1], bb_med_sync.iloc[-1], bb_inf_sync.iloc[-1],
@@ -480,7 +514,7 @@ def start_live_trading_bot(
 
                     if vendas_habilitadas:
                         cond_bb_venda = df['fechamento'].iloc[-2] >= bb_superior.iloc[-2]
-                        cond_rsi_venda = rsi.iloc[-2] >= rsi_sobrecompra
+                        cond_rsi_venda = rsi.iloc[-2] >= rsi_sobrecompra_efetivo
                         # FIX #4: vela atual deve ser vermelha (confirmacao de reversao)
                         cond_retorno_venda = (
                             df['fechamento'].iloc[-1] < df['fechamento'].iloc[-2]
@@ -496,7 +530,16 @@ def start_live_trading_bot(
                                                            adx_limite_maximo, di_limite_dominancia, logger, cripto, MODULE_NAME):
                                 pass
                             elif not mercado_tem_volatilidade_suficiente(df, atr_periodo, atr_filtro_multiplicador_dinamico, last_loss_time, logger, cripto, MODULE_NAME):
-                                pass
+                                if df.index[-1] != vela_bloqueou_atr:  # loga 1x por vela, não 1x por ciclo (30s)
+                                    vela_bloqueou_atr = df.index[-1]
+                                    _mult_efetivo = atr_filtro_multiplicador_dinamico + 0.4 if (time.time() - last_loss_time) / 3600 < 4.0 else atr_filtro_multiplicador_dinamico
+                                    orchestrator.log_evaluator_decision(
+                                        cripto=cripto,
+                                        justificativa=f"Sinal de VENDA bloqueado: ATR atual abaixo do mínimo exigido (multiplicador efetivo {_mult_efetivo}) — mercado sem volatilidade suficiente para reversão.",
+                                        acao_tomada="REJEITADO",
+                                        confianca=0.0,
+                                        nome_bot="Mean Reversion"
+                                    )
                             elif not volume_nao_e_anomalia(df, volume_media_periodo, volume_multiplicador_max, logger, cripto, MODULE_NAME):
                                 pass
                             else:
@@ -535,7 +578,7 @@ def start_live_trading_bot(
                                     resposta = trade_entry_evaluator.run(
                                         prompt_trade_entry_evaluator(
                                             saldo, tempo_grafico,
-                                            rsi_periodo, rsi_sobrevenda, rsi_sobrecompra,
+                                            rsi_periodo, rsi_sobrevenda_efetivo, rsi_sobrecompra_efetivo,
                                             bb_periodo, bb_desvio_padrao,
                                             adx_periodo, adx_limite_maximo,
                                             rsi_sync.iloc[-1], bb_sup_sync.iloc[-1], bb_med_sync.iloc[-1], bb_inf_sync.iloc[-1],
