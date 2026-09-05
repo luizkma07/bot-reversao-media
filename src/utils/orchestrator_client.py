@@ -131,6 +131,15 @@ class FleetOrchestrator:
             req = urllib.request.Request(endpoint, data=payload.encode('utf-8'), method='POST')
             req.add_header('Authorization', f'Bearer {self.token}')
             urllib.request.urlopen(req, timeout=5)
+            # evaluations_log nunca teve LTRIM — cresce pra sempre e é lido em
+            # janelas fixas (lrange 0/999 no dossiê 24h/7d do Alpha Strategist,
+            # 0/50 no optimizer). Best-effort, nunca afeta o log principal acima.
+            try:
+                req_trim = urllib.request.Request(f"{self.url}/LTRIM/evaluations_log/0/1999", method='POST')
+                req_trim.add_header('Authorization', f'Bearer {self.token}')
+                urllib.request.urlopen(req_trim, timeout=5)
+            except Exception:
+                pass
         except Exception:
             pass
 

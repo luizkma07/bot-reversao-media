@@ -63,6 +63,19 @@ volume_multiplicador_max = 2.5
 MAX_STOPS_CONSECUTIVOS = 3
 PAUSA_CIRCUIT_BREAKER_HORAS = 2
 
+# ═══════════════════════════════════════════════════════════════════
+# [OBSERVABILIDADE] Cadência do log de estados de bloqueio globais
+# ───────────────────────────────────────────────────────────────────
+# PAUSED e CIRCUIT_BREAKER são checados ANTES de buscar velas, então não
+# dá pra deduplicar por vela como os bloqueios de entrada — a dedup aqui
+# é por tempo. 1x/hora: um bot pausado por 3 dias gera 72 entradas, não
+# 8.640 (que seria o dedup de 30s do loop). O evaluations_log não tem
+# LTRIM e é lido em janelas FIXAS pelo Alpha Strategist (lrange 0/999 no
+# dossiê 24h/7d, 0/50 no optimizer) — inundar a lista empurra as
+# avaliações reais pra fora dessas janelas.
+# ═══════════════════════════════════════════════════════════════════
+INTERVALO_LOG_ESTADO_BLOQUEADO_SEG = 3600
+
 
 def salvar_estado_cb(stops_consecutivos, bloqueio_ate, last_loss_time=0.0, logger=None):
     try:
@@ -242,6 +255,20 @@ def start_live_trading_bot(
     vela_fechou_trade = None  # será inicializado com a última vela no 1º ciclo
     vela_executou_trade_entry_evaluator = None
     vela_bloqueou_atr = None  # dedup do log de bloqueio por ATR — 1x por vela, não 1x por ciclo (30s)
+    # [OBSERVABILIDADE] Sentinelas dos demais motivos de bloqueio da cadeia de
+    # entrada (allowed_side / risco zero / teto de ADX / anomalia de volume).
+    # O gate externo "df.index[-1] != vela_fechou_trade" NÃO é por vela: ele só
+    # muda quando um trade fecha, então a cadeia inteira reavalia a cada ciclo
+    # de 30s dentro da mesma vela de 30min. Sem sentinela, um bloqueio
+    # persistente viraria ~60 entradas por vela num Redis list sem LTRIM.
+    # Sentinela separada por lado (o vela_bloqueou_atr acima é compartilhado
+    # entre compra e venda; aqui compra e venda não se suprimem uma à outra).
+    vela_bloqueio_compra_logada = None
+    vela_bloqueio_venda_logada = None
+    # Dedup por tempo (PAUSED) e por episódio (circuit breaker) — ver
+    # INTERVALO_LOG_ESTADO_BLOQUEADO_SEG. Ambos são checados antes de existir df.
+    ultimo_log_pausado = 0.0
+    cb_bloqueio_logado = None
     ultima_execucao_trade_conductor = None
 
     if estado_de_trade in [EstadoDeTrade.COMPRADO, EstadoDeTrade.VENDIDO]:
@@ -276,6 +303,18 @@ def start_live_trading_bot(
         if bot_state:
             if bot_state.get('status') == 'PAUSED':
                 logger.info(LogCategory.TRADE_SEARCH, "Ordem do Orquestrador: Bot Pausado. Aguardando...", MODULE_NAME, symbol=cripto)
+                # [OBSERVABILIDADE] O logger.info acima só existe no Render. Sem
+                # espelhar no Redis, um bot pausado por dias é indistinguível de
+                # um bot que simplesmente não achou sinal nenhum no evaluations_log.
+                if time.time() - ultimo_log_pausado > INTERVALO_LOG_ESTADO_BLOQUEADO_SEG:
+                    ultimo_log_pausado = time.time()
+                    orchestrator.log_evaluator_decision(
+                        cripto=cripto,
+                        justificativa="[PAUSED] Bot pausado por ordem do Orquestrador (status=PAUSED). Nenhuma entrada é avaliada enquanto durar a pausa.",
+                        acao_tomada="REJEITADO",
+                        confianca=0.0,
+                        nome_bot="Mean Reversion"
+                    )
                 time.sleep(30)
                 continue
 
@@ -302,6 +341,19 @@ def start_live_trading_bot(
             restante = int(bloqueio_ate - time.time())
             h, m = divmod(restante // 60, 60)
             logger.warning(LogCategory.TRADE_SEARCH, f"CIRCUIT BREAKER ATIVO. Restam {h:02d}h{m:02d}m.", MODULE_NAME, symbol=cripto)
+            # [OBSERVABILIDADE] 1 log por EPISÓDIO de circuit breaker: a dedup é o
+            # próprio valor de bloqueio_ate (único por ativação). A janela inteira
+            # já vai descrita na justificativa, então um ping periódico só somaria
+            # ruído — 1 entrada por ativação descreve o bloqueio por completo.
+            if bloqueio_ate != cb_bloqueio_logado:
+                cb_bloqueio_logado = bloqueio_ate
+                orchestrator.log_evaluator_decision(
+                    cripto=cripto,
+                    justificativa=f"[CIRCUIT_BREAKER] Bot bloqueado por sequência de stops até {datetime.fromtimestamp(bloqueio_ate).strftime('%Y-%m-%d %H:%M:%S')} (restam {h:02d}h{m:02d}m). Nenhuma entrada é avaliada nesse período.",
+                    acao_tomada="REJEITADO",
+                    confianca=0.0,
+                    nome_bot="Mean Reversion"
+                )
             time.sleep(30)
             continue
 
@@ -424,13 +476,46 @@ def start_live_trading_bot(
                         sinal_compra = cond_bb_compra and cond_rsi_compra and cond_retorno_compra
 
                         if sinal_compra:
+                            # [OBSERVABILIDADE] Cada branch abaixo era um `pass` mudo:
+                            # o sinal de reversão existia de verdade (BB + RSI + vela de
+                            # retorno) e morria sem nenhum rastro no evaluations_log.
+                            # Dedup por vela via vela_bloqueio_compra_logada — a cadeia
+                            # reavalia a cada 30s dentro da mesma vela de 30min.
+                            _logar_bloqueio_compra = df.index[-1] != vela_bloqueio_compra_logada
                             if allowed_side not in ["LONG", "BOTH"]:
-                                pass
+                                if _logar_bloqueio_compra:
+                                    vela_bloqueio_compra_logada = df.index[-1]
+                                    orchestrator.log_evaluator_decision(
+                                        cripto=cripto,
+                                        justificativa=f"[ALLOWED_SIDE] Sinal de COMPRA descartado: lado LONG desabilitado pelo Alpha Strategist (allowed_side={allowed_side}).",
+                                        acao_tomada="REJEITADO",
+                                        confianca=0.0,
+                                        nome_bot="Mean Reversion"
+                                    )
                             elif risk_multiplier == 0.0:
-                                pass
+                                if _logar_bloqueio_compra:
+                                    vela_bloqueio_compra_logada = df.index[-1]
+                                    orchestrator.log_evaluator_decision(
+                                        cripto=cripto,
+                                        justificativa="[RISK_ZERO] Sinal de COMPRA descartado: risk_multiplier=0.0 definido pelo Alpha Strategist zera o tamanho de posição.",
+                                        acao_tomada="REJEITADO",
+                                        confianca=0.0,
+                                        nome_bot="Mean Reversion"
+                                    )
                             elif not mercado_ok_para_entrada(df, 'compra', adx, plus_di, minus_di,
                                                            adx_limite_maximo, di_limite_dominancia, logger, cripto, MODULE_NAME):
-                                pass
+                                if _logar_bloqueio_compra:
+                                    vela_bloqueio_compra_logada = df.index[-1]
+                                    orchestrator.log_evaluator_decision(
+                                        cripto=cripto,
+                                        justificativa=(
+                                            f"[ADX_CEILING] Sinal de COMPRA descartado: tendência forte demais para reversão "
+                                            f"(ADX={adx.iloc[-2]:.2f} vs teto {adx_limite_maximo}, -DI={minus_di.iloc[-2]:.2f} vs limite {di_limite_dominancia})."
+                                        ),
+                                        acao_tomada="REJEITADO",
+                                        confianca=0.0,
+                                        nome_bot="Mean Reversion"
+                                    )
                             elif not mercado_tem_volatilidade_suficiente(df, atr_periodo, atr_filtro_multiplicador_dinamico, last_loss_time, logger, cripto, MODULE_NAME):
                                 if df.index[-1] != vela_bloqueou_atr:  # loga 1x por vela, não 1x por ciclo (30s)
                                     vela_bloqueou_atr = df.index[-1]
@@ -443,7 +528,19 @@ def start_live_trading_bot(
                                         nome_bot="Mean Reversion"
                                     )
                             elif not volume_nao_e_anomalia(df, volume_media_periodo, volume_multiplicador_max, logger, cripto, MODULE_NAME):
-                                pass
+                                if _logar_bloqueio_compra:
+                                    vela_bloqueio_compra_logada = df.index[-1]
+                                    orchestrator.log_evaluator_decision(
+                                        cripto=cripto,
+                                        justificativa=(
+                                            f"[VOLUME_ANOMALY] Sinal de COMPRA descartado: volume da vela de sinal "
+                                            f"({df['volume'].iloc[-2]}) acima de {volume_multiplicador_max}x a média de "
+                                            f"{volume_media_periodo} velas — provável evento/notícia, não reversão à média."
+                                        ),
+                                        acao_tomada="REJEITADO",
+                                        confianca=0.0,
+                                        nome_bot="Mean Reversion"
+                                    )
                             else:
                                 estado_de_trade, _, _, _, _, _ = tem_trade_aberto(cripto, subconta)
                                 if estado_de_trade == EstadoDeTrade.DE_FORA and df.index[-1] != vela_executou_trade_entry_evaluator:
@@ -522,13 +619,44 @@ def start_live_trading_bot(
                         sinal_venda = cond_bb_venda and cond_rsi_venda and cond_retorno_venda
 
                         if sinal_venda:
+                            # [OBSERVABILIDADE] Espelho exato da cadeia de compra acima:
+                            # cada branch era um `pass` mudo. Sentinela própria do lado
+                            # de venda, pra um bloqueio de compra não suprimir o de venda.
+                            _logar_bloqueio_venda = df.index[-1] != vela_bloqueio_venda_logada
                             if allowed_side not in ["SHORT", "BOTH"]:
-                                pass
+                                if _logar_bloqueio_venda:
+                                    vela_bloqueio_venda_logada = df.index[-1]
+                                    orchestrator.log_evaluator_decision(
+                                        cripto=cripto,
+                                        justificativa=f"[ALLOWED_SIDE] Sinal de VENDA descartado: lado SHORT desabilitado pelo Alpha Strategist (allowed_side={allowed_side}).",
+                                        acao_tomada="REJEITADO",
+                                        confianca=0.0,
+                                        nome_bot="Mean Reversion"
+                                    )
                             elif risk_multiplier == 0.0:
-                                pass
+                                if _logar_bloqueio_venda:
+                                    vela_bloqueio_venda_logada = df.index[-1]
+                                    orchestrator.log_evaluator_decision(
+                                        cripto=cripto,
+                                        justificativa="[RISK_ZERO] Sinal de VENDA descartado: risk_multiplier=0.0 definido pelo Alpha Strategist zera o tamanho de posição.",
+                                        acao_tomada="REJEITADO",
+                                        confianca=0.0,
+                                        nome_bot="Mean Reversion"
+                                    )
                             elif not mercado_ok_para_entrada(df, 'venda', adx, plus_di, minus_di,
                                                            adx_limite_maximo, di_limite_dominancia, logger, cripto, MODULE_NAME):
-                                pass
+                                if _logar_bloqueio_venda:
+                                    vela_bloqueio_venda_logada = df.index[-1]
+                                    orchestrator.log_evaluator_decision(
+                                        cripto=cripto,
+                                        justificativa=(
+                                            f"[ADX_CEILING] Sinal de VENDA descartado: tendência forte demais para reversão "
+                                            f"(ADX={adx.iloc[-2]:.2f} vs teto {adx_limite_maximo}, +DI={plus_di.iloc[-2]:.2f} vs limite {di_limite_dominancia})."
+                                        ),
+                                        acao_tomada="REJEITADO",
+                                        confianca=0.0,
+                                        nome_bot="Mean Reversion"
+                                    )
                             elif not mercado_tem_volatilidade_suficiente(df, atr_periodo, atr_filtro_multiplicador_dinamico, last_loss_time, logger, cripto, MODULE_NAME):
                                 if df.index[-1] != vela_bloqueou_atr:  # loga 1x por vela, não 1x por ciclo (30s)
                                     vela_bloqueou_atr = df.index[-1]
@@ -541,7 +669,19 @@ def start_live_trading_bot(
                                         nome_bot="Mean Reversion"
                                     )
                             elif not volume_nao_e_anomalia(df, volume_media_periodo, volume_multiplicador_max, logger, cripto, MODULE_NAME):
-                                pass
+                                if _logar_bloqueio_venda:
+                                    vela_bloqueio_venda_logada = df.index[-1]
+                                    orchestrator.log_evaluator_decision(
+                                        cripto=cripto,
+                                        justificativa=(
+                                            f"[VOLUME_ANOMALY] Sinal de VENDA descartado: volume da vela de sinal "
+                                            f"({df['volume'].iloc[-2]}) acima de {volume_multiplicador_max}x a média de "
+                                            f"{volume_media_periodo} velas — provável evento/notícia, não reversão à média."
+                                        ),
+                                        acao_tomada="REJEITADO",
+                                        confianca=0.0,
+                                        nome_bot="Mean Reversion"
+                                    )
                             else:
                                 estado_de_trade, _, _, _, _, _ = tem_trade_aberto(cripto, subconta)
                                 if estado_de_trade == EstadoDeTrade.DE_FORA and df.index[-1] != vela_executou_trade_entry_evaluator:

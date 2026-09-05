@@ -141,6 +141,10 @@ class TradeEntryEvaluatorParser(BaseParser):
         if resposta_json is None:
             logger.error(LogCategory.PARSING_ERROR, "Resposta inválida do trade entry evaluator", "trade_entry_evaluator_parser",
                 symbol=cripto, timeframe=tempo_grafico)
+            # [OBSERVABILIDADE] Único retorno falsy do parser sem telemetria no
+            # Redis (logger.error acima só existe no Render) — mesmo bug já
+            # corrigido nos parsers do Sniper e da Vanguarda.
+            FleetOrchestrator(logger=logger).log_evaluator_decision(cripto, "Resposta do LLM não pôde ser parseada como JSON válido.", "REJEITADO", 0.0, "Mean Reversion")
         else:
             # print(f'Resposta do trade entry evaluator: {resposta.content}', flush=True)
             # print('-' * 10)
