@@ -26,6 +26,15 @@ class ModelConfigs:
     if GEMINI_AVAILABLE:
         GEMINI_FLASH = Gemini(id="gemini-2.5-flash")
         GEMINI_PRO = Gemini(id="gemini-2.5-pro")
+        # gemini-2.5-pro desativa em 16/10/2026 (aviso oficial do Google), mesmo
+        # prazo do 2.5-flash. gemini-3.1-pro-preview mantém o tier Pro (não é
+        # downgrade pra flash-lite — essa troca precisa de decisão própria, não
+        # foi isso que foi pedido aqui) e usa thinking_level (não thinking_budget
+        # da geração 2.5). "medium" em vez de "low": este bot avalia poucas vezes
+        # por semana (~2/7d medido), então custo/latência não é o gargalo, e a
+        # tarefa (confluências de exaustão/divergência) se beneficia de mais
+        # raciocínio do que uma decisão binária de rompimento.
+        GEMINI_PRO_31 = Gemini(id="gemini-3.1-pro-preview", temperature=0.35, thinking_level="medium", include_thoughts=True)
     # GROQ_LLAMA = Groq(id="llama-3.3-70b-versatile")
 
     MODEL_MAP = {
@@ -38,6 +47,7 @@ class ModelConfigs:
     if GEMINI_AVAILABLE:
         MODEL_MAP["gemini-flash"] = GEMINI_FLASH
         MODEL_MAP["gemini-pro"] = GEMINI_PRO
+        MODEL_MAP["gemini-pro-3-1"] = GEMINI_PRO_31
     # "groq": GROQ_LLAMA
 
 class InstructionSets:

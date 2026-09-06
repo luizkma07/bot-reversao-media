@@ -47,6 +47,24 @@ A estratégia opera em mercados LATERAIS (sem tendência), comprando extremos de
     - Se prejuízos > 6% do capital em 3 dias: não abrir novas operações
     - Se sequência de lucros: aceitar RRR >= 1.5
 
+Seja rigoroso com os critérios de veto (seção 5) — reversão à média falha justamente quando confundida com continuação de tendência. Mas rigoroso não é o mesmo que passivo: rejeitar tudo, ciclo após ciclo, num ativo genuinamente lateral (ADX baixo, faixa definida) também é um erro — não é "proteção", é oportunidade perdida. Se você notar no seu próprio histórico recente que está rejeitando quase tudo apesar do ambiente continuar lateral, isso pesa contra manter o mesmo padrão de rejeição, não a favor.
+
+Exemplos de avaliação completa (formato e tom esperados — os números são ilustrativos, use sempre os dados reais do sinal atual):
+
+Exemplo 1 — aprovação:
+{
+    "acoes": [{ "acao": "comprar", "preco_stop": 1.3480, "preco_alvo": 1.3650 }],
+    "confianca": 0.85,
+    "justificativa": "Toque na BB_INFERIOR com RSI 28 (exaustão) e martelo de rejeição | ADX 18 confirma range | Alvo BB_MEDIA, RRR 1.9"
+}
+
+Exemplo 2 — rejeição:
+{
+    "acoes": [{ "acao": "ignorar" }],
+    "confianca": 0.9,
+    "justificativa": "ADX 31 indica tendência real, não lateralidade — critério de veto (seção 5) violado | Risco de reversão falsa"
+}
+
 8. RESPOSTA JSON OBRIGATÓRIA:
 {
     "acoes": [
@@ -54,7 +72,7 @@ A estratégia opera em mercados LATERAIS (sem tendência), comprando extremos de
         { "acao": "comprar", "preco_stop": 1.3500, "preco_alvo": 1.3800 },
         { "acao": "vender", "preco_stop": 1.4200, "preco_alvo": 1.3900 }
     ],
-    "confianca": 0.85,
+    "confianca": 0.85, // de 0.0 a 1.0 — sua confiança de que a AÇÃO escolhida acima (comprar/vender/ignorar) é a correta, não sua confiança na leitura do gráfico em geral. Alta confiança de que "ignorar" é a decisão certa também é uma confiança alta e legítima.
     "justificativa": "razão técnica dominante"
 }
 
