@@ -601,7 +601,7 @@ def start_live_trading_bot(
                                         # desconhecido" só local, sem orchestrator.log_evaluator_decision.
                                         # Isso sumia do evaluations_log. Mesmo padrão já corrigido
                                         # na Vanguarda e no Sniper.
-                                        logger.error(LogCategory.AGENT_EXECUTION, f"Timeout ou falha na LLM: {str(e)}", MODULE_NAME, symbol=cripto)
+                                        logger.error(LogCategory.EXECUTION_ERROR, f"Timeout ou falha na LLM: {str(e)}", MODULE_NAME, symbol=cripto, exception=e)
                                         orchestrator.log_evaluator_decision(
                                             cripto=cripto,
                                             justificativa=f"[LLM_ERROR] Sinal de COMPRA não avaliado: falha/timeout na chamada ao Entry Evaluator ({type(e).__name__}: {e}).",
@@ -628,7 +628,7 @@ def start_live_trading_bot(
                                             # Bybit (nunca retorna dict silencioso) — uma rejeição real
                                             # da exchange (ex.: ErrCode 10024) ficaria disfarçada de
                                             # erro de LLM se caísse no except acima.
-                                            logger.error(LogCategory.AGENT_EXECUTION, f"Erro ao processar decisão/executar ordem: {str(e)}", MODULE_NAME, symbol=cripto)
+                                            logger.error(LogCategory.TRADE_OPEN_ERROR, f"Erro ao processar decisão/executar ordem: {str(e)}", MODULE_NAME, symbol=cripto, exception=e)
                                             orchestrator.log_evaluator_decision(
                                                 cripto=cripto,
                                                 justificativa=f"[EXCHANGE_ERROR] Sinal de COMPRA aprovado pela LLM, mas a execução falhou ({type(e).__name__}: {e}).",
@@ -765,7 +765,7 @@ def start_live_trading_bot(
                                         # [CORREÇÃO 2026-09-14] Ver comentário equivalente no branch
                                         # de compra: o try/except externo (linha ~751) não cobria
                                         # isso, caía como "Erro desconhecido" só local.
-                                        logger.error(LogCategory.AGENT_EXECUTION, f"Timeout ou falha na LLM: {str(e)}", MODULE_NAME, symbol=cripto)
+                                        logger.error(LogCategory.EXECUTION_ERROR, f"Timeout ou falha na LLM: {str(e)}", MODULE_NAME, symbol=cripto, exception=e)
                                         orchestrator.log_evaluator_decision(
                                             cripto=cripto,
                                             justificativa=f"[LLM_ERROR] Sinal de VENDA não avaliado: falha/timeout na chamada ao Entry Evaluator ({type(e).__name__}: {e}).",
@@ -788,7 +788,7 @@ def start_live_trading_bot(
                                                 resposta, cripto, subconta, tempo_grafico, risco_efetivo_valor, logger, preco_atual_travado=preco_atual_travado
                                             )
                                         except Exception as e:
-                                            logger.error(LogCategory.AGENT_EXECUTION, f"Erro ao processar decisão/executar ordem: {str(e)}", MODULE_NAME, symbol=cripto)
+                                            logger.error(LogCategory.TRADE_OPEN_ERROR, f"Erro ao processar decisão/executar ordem: {str(e)}", MODULE_NAME, symbol=cripto, exception=e)
                                             orchestrator.log_evaluator_decision(
                                                 cripto=cripto,
                                                 justificativa=f"[EXCHANGE_ERROR] Sinal de VENDA aprovado pela LLM, mas a execução falhou ({type(e).__name__}: {e}).",
