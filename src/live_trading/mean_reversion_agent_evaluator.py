@@ -579,32 +579,64 @@ def start_live_trading_bot(
                                     # parser usa este mesmo valor depois, em vez de remedir na Bybit minutos
                                     # depois (o que degradava o RRR por drift de preco).
                                     preco_atual_travado = df['fechamento'].iloc[-1]
-                                    resposta = trade_entry_evaluator.run(
-                                        prompt_trade_entry_evaluator(
-                                            saldo, tempo_grafico,
-                                            rsi_periodo, rsi_sobrevenda_efetivo, rsi_sobrecompra_efetivo,
-                                            bb_periodo, bb_desvio_padrao,
-                                            adx_periodo, adx_limite_maximo,
-                                            rsi_sync.iloc[-1], bb_sup_sync.iloc[-1], bb_med_sync.iloc[-1], bb_inf_sync.iloc[-1],
-                                            adx_sync.iloc[-1],
-                                            cripto, qtd_min_para_operar, subconta, 'compra',
-                                            df_consolidado, df_1w, df_1d, df_4h,
-                                            preco_atual_ao_vivo=preco_atual_travado
+                                    try:
+                                        resposta = trade_entry_evaluator.run(
+                                            prompt_trade_entry_evaluator(
+                                                saldo, tempo_grafico,
+                                                rsi_periodo, rsi_sobrevenda_efetivo, rsi_sobrecompra_efetivo,
+                                                bb_periodo, bb_desvio_padrao,
+                                                adx_periodo, adx_limite_maximo,
+                                                rsi_sync.iloc[-1], bb_sup_sync.iloc[-1], bb_med_sync.iloc[-1], bb_inf_sync.iloc[-1],
+                                                adx_sync.iloc[-1],
+                                                cripto, qtd_min_para_operar, subconta, 'compra',
+                                                df_consolidado, df_1w, df_1d, df_4h,
+                                                preco_atual_ao_vivo=preco_atual_travado
+                                            )
                                         )
-                                    )
-
-                                    logger.agent(
-                                        LogCategory.AGENT_RESPONSE,
-                                        "Resposta Entry Evaluator",
-                                        MODULE_NAME,
-                                        agent_name="Entry Evaluator MR",
-                                        symbol=cripto,
-                                        response_content=resposta.content
-                                    )
-
-                                    abriu_trade = TradeEntryEvaluatorParser.processar_resposta(
-                                        resposta, cripto, subconta, tempo_grafico, risco_efetivo_valor, logger, preco_atual_travado=preco_atual_travado
-                                    )
+                                    except Exception as e:
+                                        # [CORREÇÃO 2026-09-14] Antes desta função inteira rodava sob
+                                        # um único try/except externo (linha ~751) que só trata
+                                        # rate-limit/rede/manutenção/saldo — qualquer outra falha
+                                        # (Gemini fora do ar, erro de parsing) caía no "Erro
+                                        # desconhecido" só local, sem orchestrator.log_evaluator_decision.
+                                        # Isso sumia do evaluations_log. Mesmo padrão já corrigido
+                                        # na Vanguarda e no Sniper.
+                                        logger.error(LogCategory.AGENT_EXECUTION, f"Timeout ou falha na LLM: {str(e)}", MODULE_NAME, symbol=cripto)
+                                        orchestrator.log_evaluator_decision(
+                                            cripto=cripto,
+                                            justificativa=f"[LLM_ERROR] Sinal de COMPRA não avaliado: falha/timeout na chamada ao Entry Evaluator ({type(e).__name__}: {e}).",
+                                            acao_tomada="REJEITADO",
+                                            confianca=0.0,
+                                            nome_bot="Mean Reversion"
+                                        )
+                                        abriu_trade = False
+                                    else:
+                                        logger.agent(
+                                            LogCategory.AGENT_RESPONSE,
+                                            "Resposta Entry Evaluator",
+                                            MODULE_NAME,
+                                            agent_name="Entry Evaluator MR",
+                                            symbol=cripto,
+                                            response_content=resposta.content
+                                        )
+                                        try:
+                                            abriu_trade = TradeEntryEvaluatorParser.processar_resposta(
+                                                resposta, cripto, subconta, tempo_grafico, risco_efetivo_valor, logger, preco_atual_travado=preco_atual_travado
+                                            )
+                                        except Exception as e:
+                                            # pybit levanta exceção pra qualquer retCode não-zero da
+                                            # Bybit (nunca retorna dict silencioso) — uma rejeição real
+                                            # da exchange (ex.: ErrCode 10024) ficaria disfarçada de
+                                            # erro de LLM se caísse no except acima.
+                                            logger.error(LogCategory.AGENT_EXECUTION, f"Erro ao processar decisão/executar ordem: {str(e)}", MODULE_NAME, symbol=cripto)
+                                            orchestrator.log_evaluator_decision(
+                                                cripto=cripto,
+                                                justificativa=f"[EXCHANGE_ERROR] Sinal de COMPRA aprovado pela LLM, mas a execução falhou ({type(e).__name__}: {e}).",
+                                                acao_tomada="REJEITADO",
+                                                confianca=0.0,
+                                                nome_bot="Mean Reversion"
+                                            )
+                                            abriu_trade = False
                                     if abriu_trade:
                                         vela_abertura_trade = df.index[-1]
                                         ultima_execucao_trade_conductor = datetime.now()
@@ -715,32 +747,56 @@ def start_live_trading_bot(
                                     # parser usa este mesmo valor depois, em vez de remedir na Bybit minutos
                                     # depois (o que degradava o RRR por drift de preco).
                                     preco_atual_travado = df['fechamento'].iloc[-1]
-                                    resposta = trade_entry_evaluator.run(
-                                        prompt_trade_entry_evaluator(
-                                            saldo, tempo_grafico,
-                                            rsi_periodo, rsi_sobrevenda_efetivo, rsi_sobrecompra_efetivo,
-                                            bb_periodo, bb_desvio_padrao,
-                                            adx_periodo, adx_limite_maximo,
-                                            rsi_sync.iloc[-1], bb_sup_sync.iloc[-1], bb_med_sync.iloc[-1], bb_inf_sync.iloc[-1],
-                                            adx_sync.iloc[-1],
-                                            cripto, qtd_min_para_operar, subconta, 'venda',
-                                            df_consolidado, df_1w, df_1d, df_4h,
-                                            preco_atual_ao_vivo=preco_atual_travado
+                                    try:
+                                        resposta = trade_entry_evaluator.run(
+                                            prompt_trade_entry_evaluator(
+                                                saldo, tempo_grafico,
+                                                rsi_periodo, rsi_sobrevenda_efetivo, rsi_sobrecompra_efetivo,
+                                                bb_periodo, bb_desvio_padrao,
+                                                adx_periodo, adx_limite_maximo,
+                                                rsi_sync.iloc[-1], bb_sup_sync.iloc[-1], bb_med_sync.iloc[-1], bb_inf_sync.iloc[-1],
+                                                adx_sync.iloc[-1],
+                                                cripto, qtd_min_para_operar, subconta, 'venda',
+                                                df_consolidado, df_1w, df_1d, df_4h,
+                                                preco_atual_ao_vivo=preco_atual_travado
+                                            )
                                         )
-                                    )
-
-                                    logger.agent(
-                                        LogCategory.AGENT_RESPONSE,
-                                        "Resposta Entry Evaluator",
-                                        MODULE_NAME,
-                                        agent_name="Entry Evaluator MR",
-                                        symbol=cripto,
-                                        response_content=resposta.content
-                                    )
-
-                                    abriu_trade = TradeEntryEvaluatorParser.processar_resposta(
-                                        resposta, cripto, subconta, tempo_grafico, risco_efetivo_valor, logger, preco_atual_travado=preco_atual_travado
-                                    )
+                                    except Exception as e:
+                                        # [CORREÇÃO 2026-09-14] Ver comentário equivalente no branch
+                                        # de compra: o try/except externo (linha ~751) não cobria
+                                        # isso, caía como "Erro desconhecido" só local.
+                                        logger.error(LogCategory.AGENT_EXECUTION, f"Timeout ou falha na LLM: {str(e)}", MODULE_NAME, symbol=cripto)
+                                        orchestrator.log_evaluator_decision(
+                                            cripto=cripto,
+                                            justificativa=f"[LLM_ERROR] Sinal de VENDA não avaliado: falha/timeout na chamada ao Entry Evaluator ({type(e).__name__}: {e}).",
+                                            acao_tomada="REJEITADO",
+                                            confianca=0.0,
+                                            nome_bot="Mean Reversion"
+                                        )
+                                        abriu_trade = False
+                                    else:
+                                        logger.agent(
+                                            LogCategory.AGENT_RESPONSE,
+                                            "Resposta Entry Evaluator",
+                                            MODULE_NAME,
+                                            agent_name="Entry Evaluator MR",
+                                            symbol=cripto,
+                                            response_content=resposta.content
+                                        )
+                                        try:
+                                            abriu_trade = TradeEntryEvaluatorParser.processar_resposta(
+                                                resposta, cripto, subconta, tempo_grafico, risco_efetivo_valor, logger, preco_atual_travado=preco_atual_travado
+                                            )
+                                        except Exception as e:
+                                            logger.error(LogCategory.AGENT_EXECUTION, f"Erro ao processar decisão/executar ordem: {str(e)}", MODULE_NAME, symbol=cripto)
+                                            orchestrator.log_evaluator_decision(
+                                                cripto=cripto,
+                                                justificativa=f"[EXCHANGE_ERROR] Sinal de VENDA aprovado pela LLM, mas a execução falhou ({type(e).__name__}: {e}).",
+                                                acao_tomada="REJEITADO",
+                                                confianca=0.0,
+                                                nome_bot="Mean Reversion"
+                                            )
+                                            abriu_trade = False
                                     if abriu_trade:
                                         vela_abertura_trade = df.index[-1]
                                         ultima_execucao_trade_conductor = datetime.now()
