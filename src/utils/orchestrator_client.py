@@ -1,5 +1,6 @@
 import os
 import json
+import time
 import urllib.request
 import urllib.error
 from datetime import datetime
@@ -10,26 +11,42 @@ class FleetOrchestrator:
         self.token = os.environ.get("UPSTASH_REDIS_REST_TOKEN", "")
         self.logger = logger
         self.last_known_state = None
+        # [OTIMIZAÇÃO 2026-09-15] fleet_state só muda quando o Alpha roda um
+        # ciclo novo (~4h) ou é aprovado manualmente — reler a cada 30s (a
+        # cada iteração do loop) não traz dado mais fresco, só queima cota
+        # do Redis. Achado real: 3 bots x 2 leituras/30s x 30 dias ≈ 500k
+        # comandos/mês SÓ nisso — bateu o teto do plano free da Upstash.
+        # Cache de 90s: latência de atualização real fica em segundos,
+        # muito abaixo da cadência de 4h do Alpha, sem nenhum efeito
+        # prático no bot; corta esse consumo em ~3x.
+        self._fleet_state_cache_ts = 0.0
+        self._fleet_state_ttl_seconds = 90
 
-    def get_fleet_state(self):
-        """Busca o estado global de toda a frota no Redis"""
+    def get_fleet_state(self, force_refresh=False):
+        """Busca o estado global de toda a frota no Redis (cache de 90s — ver __init__)."""
         if not self.url or not self.token:
             return None
-            
+
+        agora = time.time()
+        if not force_refresh and self.last_known_state is not None and \
+                (agora - self._fleet_state_cache_ts) < self._fleet_state_ttl_seconds:
+            return self.last_known_state
+
         endpoint = f"{self.url}/get/fleet_state"
         req = urllib.request.Request(endpoint, method='GET')
         req.add_header('Authorization', f'Bearer {self.token}')
-        
+
         try:
             with urllib.request.urlopen(req, timeout=5) as response:
                 result = json.loads(response.read().decode('utf-8'))
                 if result.get("result"):
                     state_json = json.loads(result["result"])
                     self.last_known_state = state_json
+                    self._fleet_state_cache_ts = agora
                     return state_json
         except Exception as e:
             pass # Fica silencioso se der erro de conexão para não flodar o console
-        
+
         return self.last_known_state
 
     def get_bot_state(self, bot_name):
