@@ -3,7 +3,7 @@ from agno.agent import Agent
 from .configs.agent_configs import AgentConfigs
 
 AGENT_VERSION = "v2"
-MODEL_TYPE = "gemini-flash" # sonnet-4-5, gemini-flash, gemini-pro
+MODEL_TYPE = "gemini-flash" # sonnet-4-5, gemini-flash (= gemini-3.1-flash-lite desde 02/10/2026), gemini-pro
 
 config = AgentConfigs.get_trade_conductor_config(AGENT_VERSION, MODEL_TYPE)
 

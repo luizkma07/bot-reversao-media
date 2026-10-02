@@ -24,7 +24,9 @@ class ModelConfigs:
 
     # Instancia Gemini apenas se a lib estiver disponível
     if GEMINI_AVAILABLE:
-        GEMINI_FLASH = Gemini(id="gemini-2.5-flash")
+        # [02/10/2026] "gemini-flash" aponta pro 3.1 Flash-Lite: o gemini-2.5-flash desliga em
+        # 16/10/2026. Mesmos parâmetros do conductor da Vanguarda/Sniper, já validados em produção.
+        GEMINI_FLASH = Gemini(id="gemini-3.1-flash-lite", temperature=0.35, thinking_level="low", include_thoughts=True)
         GEMINI_PRO = Gemini(id="gemini-2.5-pro")
         # gemini-2.5-pro desativa em 16/10/2026 (aviso oficial do Google), mesmo
         # prazo do 2.5-flash. gemini-3.1-pro-preview mantém o tier Pro (não é
