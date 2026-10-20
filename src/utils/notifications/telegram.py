@@ -5,6 +5,7 @@ Desacoplado do sistema de logging, mais robusto e simples.
 """
 
 import html
+import json
 import time
 from typing import Set, Optional
 from collections import deque
@@ -112,6 +113,10 @@ class TelegramLogNotifier(BaseNotifier):
         if not log_event:
             return False
         
+        # [20/10/2026] A recusa já aparece na mensagem curta da LLM de entrada; sem repetir.
+        if log_event.module == "trade_entry_evaluator_parser" and str(log_event.message).startswith("Trade ignorado conforme decisão do agente"):
+            return False
+
         # Verificar se categoria está na lista
         if self.categories and log_event.category not in self.categories:
             return False
@@ -165,6 +170,11 @@ class TelegramLogNotifier(BaseNotifier):
         
         # Formatação específica por tipo
         if category == LogCategory.AGENT_RESPONSE:
+            # [20/10/2026] Avaliação da LLM de entrada em formato curto (tese/decisivo/contra/entraria se)
+            if str(agent_name).startswith("Entry Evaluator"):
+                curta = self._format_avaliacao_entrada(log_event, symbol, timestamp)
+                if curta:
+                    return curta
             return self._format_agent_response(log_event, symbol, agent_name, timestamp)
         
         elif category in [LogCategory.AGENT_ACTION, LogCategory.AGENT_DECISION]:
@@ -185,6 +195,51 @@ class TelegramLogNotifier(BaseNotifier):
         else:
             return self._format_generic(log_event, symbol, timestamp)
     
+    def _format_avaliacao_entrada(self, event: LogEvent, symbol: str, timestamp: str) -> Optional[str]:
+        """Decisão da LLM de entrada em poucas linhas. None se a resposta não for JSON legível (formato antigo)."""
+        bruto = str(event.context.get('response_content') or '')
+        i, f = bruto.find('{'), bruto.rfind('}')
+        if i < 0 or f <= i:
+            return None
+        try:
+            r = json.loads(bruto[i:f + 1])
+        except Exception:
+            return None
+        if not isinstance(r, dict):
+            return None
+        # campo que não se aplica às vezes vem como "N/A": tratado como ausente
+        r = {k: v for k, v in r.items() if not (isinstance(v, str) and v.strip().lower() in ('', 'n/a', 'na', '-', '—', 'nenhum', 'none', 'null'))}
+        e = lambda v: html.escape(str(v).strip())
+        acao = str(((r.get('acoes') or [{}])[0] or {}).get('acao', '')).lower()
+        ativo = symbol.replace('USDT', '') or symbol
+        entra = acao in ('comprar', 'vender')
+        if entra:
+            lado = 'COMPRA' if acao == 'comprar' else 'VENDA'
+            cab = f"{'📈' if acao == 'comprar' else '📉'} <b>{e(ativo)} · LLM aprova {lado}</b>"
+        else:
+            lado = {'compra': 'COMPRA', 'venda': 'VENDA'}.get(str(event.context.get('lado_operacao', '')).lower(), 'ENTRADA')
+            cab = f"🚫 <b>{e(ativo)} · LLM recusa {lado}</b>"
+        try:
+            cab += f" ({float(r.get('confianca')) * 100:.0f}%)"
+        except (TypeError, ValueError):
+            pass
+        linhas = [cab]
+        if r.get('tese'):
+            linhas.append(f"💡 <b>Tese:</b> {e(r['tese'])}")
+        if r.get('decisivo'):
+            linhas.append(f"🎯 <b>Decisivo:</b> {e(r['decisivo'])}")
+        if entra and r.get('contra'):
+            linhas.append(f"⚠️ <b>Contra:</b> {e(r['contra'])}")
+        if not entra and r.get('entraria_se'):
+            linhas.append(f"🔄 <b>Entraria se:</b> {e(r['entraria_se'])}")
+        if not (r.get('tese') or r.get('decisivo')) and r.get('justificativa'):
+            linhas.append(f"📝 {e(r['justificativa'])}")
+        stop = ((r.get('acoes') or [{}])[0] or {}).get('preco_stop') if entra else None
+        if stop:
+            linhas.append(f"🛡️ Stop proposto {e(stop)} · alvo final pelo código")
+        linhas.append(f"🕐 {timestamp}")
+        return "\n".join(linhas)
+
     def _format_agent_response(self, event: LogEvent, symbol: str, agent_name: str, timestamp: str) -> str:
         """
         Formata resposta de agente.
@@ -246,7 +301,8 @@ class TelegramLogNotifier(BaseNotifier):
     def _format_agent_action(self, event: LogEvent, symbol: str, timestamp: str) -> str:
         """Formata ação de agente."""
         action = event.context.get('action', 'unknown')
-        details = event.context.get('details', event.message)
+        # [20/10/2026] Texto variável escapado: '<', '>' ou '&' (ex.: 'RSI < 30') fazia o Telegram recusar a mensagem.
+        details = html.escape(str(event.context.get('details', event.message)))
         decision = event.context.get('decision', '')
         
         # Mapear emojis
@@ -336,19 +392,9 @@ class TelegramLogNotifier(BaseNotifier):
             direction = 'SHORT'
             color_emoji = '🔴'
         
-        message = f"""{emoji} <b>Posição {direction} Aberta</b>
-
-📊 <b>Par:</b> {symbol}
-🕐 <b>Horário:</b> {timestamp}
-
-{color_emoji} <b>Operação:</b> {operation.upper()}
-💰 <b>Entrada:</b> {format_price(entry_price)}
-🛡️ <b>Stop Loss:</b> {format_price(stop_price)}
-🎯 <b>Take Profit:</b> {format_price(target_price)}
-📦 <b>Tamanho:</b> {position_size}
-📊 <b>Risco/Retorno:</b> {format_rr(risk_reward)}
-
-#TradingBot #PositionOpen #{symbol.replace('USDT', '')} #{direction}"""
+        # [20/10/2026] Confirmação em 1 linha: a decisão e a tese já vieram na mensagem da LLM.
+        message = (f"✅ <b>Executado: {direction} {symbol.replace('USDT', '')}</b> · entrada {format_price(entry_price)} · "
+                   f"stop {format_price(stop_price)} · alvo {format_price(target_price)} · {position_size} · R/R {format_rr(risk_reward)}")
         
         return message
     
@@ -361,7 +407,7 @@ class TelegramLogNotifier(BaseNotifier):
 📊 <b>Par:</b> {symbol}
 🕐 <b>Horário:</b> {timestamp}
 
-📉 <b>Motivo:</b> {event.message}"""
+📉 <b>Motivo:</b> {html.escape(str(event.message))}"""
         
         # Detalhes específicos por tipo de warning
         if category == LogCategory.LOW_RISK_REWARD:
@@ -416,19 +462,19 @@ class TelegramLogNotifier(BaseNotifier):
     def _format_error(self, event: LogEvent, symbol: str, timestamp: str) -> str:
         """Formata erros (EXECUTION_ERROR, TRADE_OPEN_ERROR, API_ERROR, etc)."""
         error_type = event.category.value.replace('_', ' ').title()
-        details = event.context.get('details', '')
-        exception_msg = str(event.exception) if event.exception else ''
+        details = html.escape(str(event.context.get('details', '')))
+        exception_msg = html.escape(str(event.exception)) if event.exception else ''
         
         # Informações específicas de erro de abertura de trade
-        error_message = event.context.get('error_message', '')
-        error_code = event.context.get('error_code', '')
+        error_message = html.escape(str(event.context.get('error_message', '')))
+        error_code = html.escape(str(event.context.get('error_code', '')))
         
         message = f"""🚨 <b>{error_type}</b>
 
 📊 <b>Par:</b> {symbol}
 🕐 <b>Horário:</b> {timestamp}
 
-❌ <b>Erro:</b> {event.message}"""
+❌ <b>Erro:</b> {html.escape(str(event.message))}"""
         
         # Detalhes específicos de TRADE_OPEN_ERROR
         if error_message or error_code:
@@ -454,12 +500,12 @@ class TelegramLogNotifier(BaseNotifier):
         return f"""[{event.level.name}] [{event.category.value}]
 {timestamp}
 
-{event.message}
+{html.escape(str(event.message))}
 
 Par: {symbol}"""
     
     def _format_position_status(self, event: LogEvent, symbol: str, timestamp: str) -> str:
-        return f"{event.message}\n\n📊 <b>Par:</b> {symbol}\n🕐 <b>Horário:</b> {timestamp}\n\n#TradingBot #PnL #{symbol.replace('USDT', '')}"
+        return f"{html.escape(str(event.message))}\n\n📊 <b>Par:</b> {symbol}\n🕐 <b>Horário:</b> {timestamp}\n\n#TradingBot #PnL #{symbol.replace('USDT', '')}"
 
 
 def setup_telegram_notifications(

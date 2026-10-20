@@ -10,6 +10,19 @@ from utils.utilidades import calcular_risco_retorno_compra, calcular_risco_retor
 from utils.logging import LogCategory
 from utils.orchestrator_client import FleetOrchestrator
 
+def _justificativa_curta(r):
+    """[20/10/2026] Formato novo da LLM de entrada (tese/decisivo/contra/entraria_se) vira a justificativa de
+    uma linha usada no evaluations_log, no dossiê do Alpha e nos avisos."""
+    def campo(k):  # a LLM às vezes preenche o campo que não se aplica com "N/A"
+        v = str(r.get(k) or '').strip()
+        return '' if v.lower() in ('n/a', 'na', '-', '—', 'nenhum', 'none', 'null') else v
+    partes = [campo('tese'), campo('decisivo')]
+    if campo('contra'):
+        partes.append(f"Contra: {campo('contra')}")
+    if campo('entraria_se'):
+        partes.append(f"Entraria se: {campo('entraria_se')}")
+    return " | ".join(p for p in partes if p) or 'Sem justificativa'
+
 class TradeEntryEvaluatorParser(BaseParser):
     """Parser específico para o Trade Entry Evaluator"""
     
@@ -24,8 +37,11 @@ class TradeEntryEvaluatorParser(BaseParser):
     def validate(self, data: Dict) -> bool:
         """Validação específica do Trade Entry Evaluator"""
         # Campos obrigatórios
-        required_fields = {'acoes', 'confianca', 'justificativa'}
+        # [20/10/2026] Formato novo: tese/decisivo/contra/entraria_se (a justificativa de 1 linha é montada aqui).
+        required_fields = {'acoes', 'confianca'}
         if not required_fields.issubset(data.keys()):
+            return False
+        if not (data.get('justificativa') or data.get('tese')):
             return False
         
         # Validação da confiança
@@ -150,7 +166,7 @@ class TradeEntryEvaluatorParser(BaseParser):
             # print('-' * 10)
             confianca = resposta_json.get('confianca', 0.0)
             acoes = resposta_json.get('acoes', [])
-            justificativa = resposta_json.get('justificativa', 'Sem justificativa')
+            justificativa = resposta_json.get('justificativa') or _justificativa_curta(resposta_json)
             
             # verifica se a confiança é suficiente para executar o trade e se existe 'ação':'ignorar' na lista de ações
             if confianca < confianca_aceitavel:

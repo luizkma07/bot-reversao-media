@@ -617,7 +617,7 @@ def start_live_trading_bot(
                                             MODULE_NAME,
                                             agent_name="Entry Evaluator MR",
                                             symbol=cripto,
-                                            response_content=resposta.content
+                                            response_content=resposta.content, lado_operacao='compra'
                                         )
                                         try:
                                             abriu_trade = TradeEntryEvaluatorParser.processar_resposta(
@@ -781,7 +781,7 @@ def start_live_trading_bot(
                                             MODULE_NAME,
                                             agent_name="Entry Evaluator MR",
                                             symbol=cripto,
-                                            response_content=resposta.content
+                                            response_content=resposta.content, lado_operacao='venda'
                                         )
                                         try:
                                             abriu_trade = TradeEntryEvaluatorParser.processar_resposta(

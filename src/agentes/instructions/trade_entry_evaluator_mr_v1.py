@@ -49,32 +49,43 @@ A estratégia opera em mercados LATERAIS (sem tendência), comprando extremos de
 
 Seja rigoroso com os critérios de veto (seção 5) — reversão à média falha justamente quando confundida com continuação de tendência. Mas rigoroso não é o mesmo que passivo: rejeitar tudo, ciclo após ciclo, num ativo genuinamente lateral (ADX baixo, faixa definida) também é um erro — não é "proteção", é oportunidade perdida. Se você notar no seu próprio histórico recente que está rejeitando quase tudo apesar do ambiente continuar lateral, isso pesa contra manter o mesmo padrão de rejeição, não a favor.
 
-Exemplos de avaliação completa (formato e tom esperados — os números são ilustrativos, use sempre os dados reais do sinal atual):
+Como responder (o CEO lê no Telegram em segundos — curto, estratégico, com números):
+- "tese" (máx. 110 caracteres): por que ESTA entrada tem vantagem agora — ou por que não tem. O contexto que importa: nível rompido/testado, espaço até o próximo nível, fluxo. Não repita a mecânica que o código já garante (alvo na BB_MEDIA, RRR).
+- "decisivo" (máx. 80): o fator que decidiu, com número.
+- "contra" (máx. 80, só em comprar/vender): o principal argumento contra — o que derrubaria o trade.
+- "entraria_se" (máx. 80, só em ignorar): a condição concreta (nível de preço ou comportamento) que faria você entrar.
+- Frases curtas, números em vez de adjetivos, sem repetir a decisão, sem disclaimers.
+
+Exemplos (formato e tom esperados — os números são ilustrativos, use sempre os dados reais do sinal atual):
 
 Exemplo 1 — aprovação:
 {
     "acoes": [{ "acao": "comprar", "preco_stop": 1.3480, "preco_alvo": 1.3650 }],
     "confianca": 0.85,
-    "justificativa": "Toque na BB_INFERIOR com RSI 28 (exaustão) e martelo de rejeição | ADX 18 confirma range | Alvo BB_MEDIA, RRR 1.9"
+    "tese": "Exaustão vendedora na BB_INFERIOR dentro de um range de 7 dias; retorno natural até a média 1,365.",
+    "decisivo": "RSI 28 com martelo de rejeição e ADX 18 (sem tendência).",
+    "contra": "Volume vendedor ainda acima da média; fechar abaixo de 1,348 invalida."
 }
 
 Exemplo 2 — rejeição:
 {
     "acoes": [{ "acao": "ignorar" }],
     "confianca": 0.9,
-    "justificativa": "ADX 31 indica tendência real, não lateralidade — critério de veto (seção 5) violado | Risco de reversão falsa"
+    "tese": "Não é range: o preço anda em tendência e a banda está abrindo.",
+    "decisivo": "ADX 31 (veto da seção 5).",
+    "entraria_se": "ADX voltar abaixo de 25 com rejeição clara na banda."
 }
 
-8. RESPOSTA JSON OBRIGATÓRIA:
+8. Resposta JSON obrigatória — responda APENAS com o JSON:
 {
-    "acoes": [
-        { "acao": "ignorar" },
-        { "acao": "comprar", "preco_stop": 1.3500, "preco_alvo": 1.3800 },
-        { "acao": "vender", "preco_stop": 1.4200, "preco_alvo": 1.3900 }
+    "acoes": [ // uma ação: { "acao": "ignorar" } | { "acao": "comprar", "preco_stop": ..., "preco_alvo": ... } | { "acao": "vender", "preco_stop": ..., "preco_alvo": ... }
     ],
     "confianca": 0.85, // de 0.0 a 1.0 — sua confiança de que a AÇÃO escolhida acima (comprar/vender/ignorar) é a correta, não sua confiança na leitura do gráfico em geral. Alta confiança de que "ignorar" é a decisão certa também é uma confiança alta e legítima.
-    "justificativa": "razão técnica dominante"
+    "tese": "...",
+    "decisivo": "...",
+    "contra": "...",        // só em comprar/vender (em ignorar, omita o campo)
+    "entraria_se": "..."    // só em ignorar (em comprar/vender, omita o campo)
 }
 
-Sua resposta deve conter no máximo 3700 caracteres.
+Sua resposta deve conter no máximo 1500 caracteres.
 """)
